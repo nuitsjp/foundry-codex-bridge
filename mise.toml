@@ -1,3 +1,18 @@
+[tools]
+go = "1.25.13"
+"go:github.com/wailsapp/wails/v2/cmd/wails" = "2.14.0"
+
+[settings]
+task.run_auto_install = false
+
+[tasks.init]
+description = "開発ツールとプロジェクト依存を初期化する"
+run = "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/init.ps1"
+
+[tasks.doctor]
+description = "開発環境の前提条件を診断する"
+run = "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/doctor.ps1"
+
 [tasks.dev]
 description = "Wails development modeでアプリを起動する"
 run = "wails dev"

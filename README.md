@@ -13,13 +13,19 @@ Azure認証にはAzure CLIのログイン済み資格情報を使用する。Bri
 ## 開発要件
 
 - Windows
-- Go 1.25 以上
 - Azure CLI
 - Node.js 18 以上と npm
-- Wails v2 CLI
 - mise
 
-各ツールは`PATH`から実行できる必要がある。miseからNode.jsなどを自動導入しない。
+Azure CLI、Node.js、npm、miseは`PATH`から実行できる必要がある。GoとWailsはmiseで導入・固定する。Node.jsとAzure CLIは自動導入しない。
+
+最初に開発環境を初期化し、診断を通す。
+
+```powershell
+mise trust
+mise run init
+mise run doctor
+```
 
 開発モードでアプリを起動する。
 

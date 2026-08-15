@@ -47,8 +47,12 @@ Wails v2 の標準構成を起点にし、Go 側は外部境界ごとの小さ�
 │   └── platform/
 │       ├── paths_other.go
 │       └── paths_windows.go
+├── scripts/
+│   ├── doctor.ps1
+│   └── init.ps1
 ├── app.go
 ├── main.go
+├── mise.toml
 ├── wails.json
 ├── go.mod
 ├── go.sum
@@ -62,6 +66,9 @@ Wails v2 の標準構成を起点にし、Go 側は外部境界ごとの小さ�
 - `main.go`: Wails アプリケーションの起動だけを担当する。
 - `app.go`: TypeScript へ公開する Wails bound method を置く。実処理は `internal/bridge` へ委譲する。
 - `wails.json`: Wails project configuration。
+- `mise.toml`: GoとWailsのバージョン、および開発タスクを定義する。
+- `scripts/doctor.ps1`: 開発環境の前提条件を読み取り診断する。
+- `scripts/init.ps1`: mise管理ツールとプロジェクト依存を初期化する。
 - `CONTEXT.md`: プロジェクト用語集。
 
 ## Go packages

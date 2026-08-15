@@ -3,13 +3,28 @@
 ## 前提条件
 
 - Windows
-- Go 1.25 以上
 - Azure CLI
 - Node.js 18 以上と npm
-- Wails v2 CLI
 - mise
 
-各ツールは`PATH`から実行できる必要がある。miseはタスク実行だけを担当し、Azure CLI、Node.js、npm、Wails CLIを自動導入しない。`ocx`がPATHにない場合のopencodexだけは、利用者がGUIで導入を承認したときにnpmの`--prefix`を使ってユーザー領域へ導入する。
+Azure CLI、Node.js、npm、miseは`PATH`から実行できる必要がある。Go 1.25.13とWails 2.14.0はmiseで導入・固定する。Node.jsとAzure CLIは自動導入しない。`ocx`がPATHにない場合のopencodexだけは、利用者がGUIで導入を承認したときにnpmの`--prefix`を使ってユーザー領域へ導入する。
+
+## 初期化と診断
+
+リポジトリを取得した後、次を実行する。
+
+```powershell
+mise trust
+mise run init
+```
+
+`mise trust`はリポジトリの`mise.toml`を確認した利用者が明示実行する。`init`はmise管理のGoとWailsを導入し、Go modulesとfrontend依存を復元してから`doctor`を実行する。Node.jsまたはAzure CLIがない場合は自動導入せず、導入先を表示して停止する。
+
+環境だけを再診断する場合は次を実行する。
+
+```powershell
+mise run doctor
+```
 
 ## Azure の設定
 
