@@ -16,7 +16,7 @@
     "comments": "Manage Azure Model Deployments through opencodex"
   },
   "assetdir": "frontend/dist",
-  "devserver": "http://localhost:5173",
+  "devserver": "localhost:5173",
   "windows": {
     "webviewIsTransparent": false,
     "windowIsTranslucent": false,

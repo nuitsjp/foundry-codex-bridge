@@ -17,16 +17,20 @@ Azure認証にはAzure CLIのログイン済み資格情報を使用する。Bri
 - Azure CLI
 - Node.js 18 以上と npm
 - Wails v2 CLI
+- mise
 
-Node.js が利用できる状態で、次を実行する。
+各ツールは`PATH`から実行できる必要がある。miseからNode.jsなどを自動導入しない。
+
+開発モードでアプリを起動する。
 
 ```powershell
-go test ./...
-Push-Location frontend
-npm ci
-npm run build
-Pop-Location
-wails build
+mise run dev
+```
+
+テストとproduction buildをまとめて実行する。
+
+```powershell
+mise run build
 ```
 
 `ocx` が PATH にない場合、GUI の「利用者の承認でopencodexを導入」から npm を使って `%LOCALAPPDATA%\FoundryCodexBridge\opencodex` に導入する。グローバル npm 環境と PATH は変更しない。

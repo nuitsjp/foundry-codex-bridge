@@ -7,8 +7,9 @@
 - Azure CLI
 - Node.js 18 以上と npm
 - Wails v2 CLI
+- mise
 
-BridgeはAzure CLI、Node.js、npm、Wails CLIを自動導入しない。`ocx`がPATHにない場合のopencodexだけは、利用者がGUIで導入を承認したときにnpmの`--prefix`を使ってユーザー領域へ導入する。
+各ツールは`PATH`から実行できる必要がある。miseはタスク実行だけを担当し、Azure CLI、Node.js、npm、Wails CLIを自動導入しない。`ocx`がPATHにない場合のopencodexだけは、利用者がGUIで導入を承認したときにnpmの`--prefix`を使ってユーザー領域へ導入する。
 
 ## Azure の設定
 
@@ -26,15 +27,16 @@ BridgeはAzure SDK for Goの`AzureCLICredential`を使用する。選択したTe
 
 ## ローカル検証
 
-リポジトリのルートで次を実行する。
+開発モードでアプリを起動する。
 
 ```powershell
-go test ./...
-Push-Location frontend
-npm ci
-npm run build
-Pop-Location
-wails build
+mise run dev
+```
+
+Goのテスト、frontendのclean installとbuild、Wailsのproduction buildをまとめて実行する。
+
+```powershell
+mise run build
 ```
 
 `npm ci` は `frontend/package-lock.json` に固定された依存関係を使う。生成される `frontend/dist`、`frontend/wailsjs`、`build/bin` はリポジトリへコミットしない。

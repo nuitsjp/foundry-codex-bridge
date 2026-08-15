@@ -1,0 +1,7 @@
+[tasks.dev]
+description = "Wails development modeでアプリを起動する"
+run = "wails dev"
+
+[tasks.build]
+description = "Goテスト、frontend build、Wails production buildを実行する"
+run = "go test ./... && npm --prefix frontend ci && npm --prefix frontend run build && wails build -clean"
