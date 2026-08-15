@@ -13,7 +13,8 @@ FoundryCodex Bridge は、Public Azure 上の Microsoft Foundry リソースと�
 - [Azure-Samples/ai-model-start](https://github.com/Azure-Samples/ai-model-start): Responses API 対応モデルを ARM の `capabilities.responses` と `capabilities.agentsV2` から判定する Microsoft 公式サンプル。
 - [Foundry Models from partners and community](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/how-to/configure-marketplace): Marketplace 契約、必要権限、SaaS リソース要件。
 - [Azure Identity for Go](https://learn.microsoft.com/en-us/azure/developer/go/sdk/authentication/authentication-overview): Azure SDK の認証モデル。
-- [azidentity Go package](https://pkg.go.dev/github.com/Azure/azure-sdk-for-go/sdk/azidentity): `InteractiveBrowserCredential` によるブラウザ対話認証。
+- [Azure CLI authentication with the Azure SDK for Go](https://learn.microsoft.com/en-us/azure/developer/go/azure-sdk-authentication-local-development): ローカル開発環境のAzure CLI認証。
+- [azidentity Go package](https://pkg.go.dev/github.com/Azure/azure-sdk-for-go/sdk/azidentity): `AzureCLICredential`によるAzure CLI資格情報の利用。
 - [Wails project layout](https://wails.io/docs/gettingstarted/firstproject/): Wails 標準の `frontend`、`build`、`go.mod`、`wails.json` 構成。
 - [Wails Windows guide](https://wails.io/docs/guides/windows/): WebView2 ランタイム要件と配布時の扱い。
 
@@ -21,7 +22,7 @@ FoundryCodex Bridge は、Public Azure 上の Microsoft Foundry リソースと�
 
 Issue #2 では、Azure の既存 Model Resource と既存 Model Deployment を読み取り、明示的な Sync で opencodex へ反映する縦断機能までを実装する。Deployment の作成・更新、Provider の解除、複数 deployment の公開、Marketplace 契約、Azure RBAC の変更は後続段階の対象である。
 
-第1段階の実装は、Azure SDK のブラウザ認証と一覧取得、Node.js/npm の前提確認、必要時のユーザー単位 opencodex 導入、`ocx service install`、Provider と PrimaryKey の登録、custom model と selected model の反映、`ocx sync`、Responses endpoint の接続テストを含む。起動時の処理は読み取り専用で、Sync は GUI から明示的に実行する。
+第1段階の実装は、Azure CLIのログイン済み資格情報を使うAzure SDKの一覧取得、Node.js/npmの前提確認、必要時のユーザー単位opencodex導入、`ocx service install`、ProviderとPrimaryKeyの登録、custom modelとselected modelの反映、`ocx sync`、Responses endpointの接続テストを含む。起動時の処理は読み取り専用で、SyncはGUIから明示的に実行する。
 
 ## システム境界
 
@@ -29,6 +30,7 @@ Issue #2 では、Azure の既存 Model Resource と既存 Model Deployment を�
 flowchart LR
     user["User"]
     bridge["FoundryCodex Bridge<br/>Wails GUI"]
+    azcli["Azure CLI<br/>Shared Login Session"]
     azure["Azure Resource Manager<br/>+ Foundry APIs"]
     ocx["opencodex<br/>Local Proxy"]
     codex["Codex App"]
@@ -36,7 +38,10 @@ flowchart LR
 
     user -->|"GUI 操作"| bridge
 
-    bridge -->|"Azure SDK<br/>認証 / 一覧 / 作成 / 更新 / key 取得"| azure
+    bridge -->|"az login / account show"| azcli
+    bridge -->|"Azure SDK<br/>AzureCLICredential"| azcli
+    azcli -->|"ARM access token"| bridge
+    bridge -->|"Azure SDK<br/>一覧 / 作成 / 更新 / key 取得"| azure
     azure -->|"resource / model / deployment / key"| bridge
 
     bridge -->|"ocx CLI<br/>install / start / provider / sync"| ocx
@@ -52,9 +57,10 @@ flowchart LR
 
 ### FoundryCodex Bridge
 
-- プロジェクト側で管理するマルチテナント Entra パブリッククライアントの client ID を使い、アプリ内で Azure へサインインする。
-- Azure SDK の名前付き永続キャッシュと `AuthenticationRecord` で、前回のサインインを再利用する。
-- 同時に有効な Azure アカウントは1つとし、GUI からアカウントを切り替える。
+- Azure CLIの導入状態とアクティブなアカウントを診断し、GUIの明示操作から`az login`を開始する。
+- Azure SDK for Goの`AzureCLICredential`でAzure CLIの共有ログイン状態を利用する。
+- Bridge独自のEntraアプリ登録、Client ID、client secret、認証レコード、トークンキャッシュを持たない。
+- Azure CLIの共有セッションを破壊しないため、`az logout`と`az account clear`は実行しない。アカウント変更は再度`az login`を開始する。
 - サインインユーザーが参照できる tenant と subscription を一覧する。
 - GUI ではアカウント、tenant、subscription の順に1つずつ選択し、選択中の tenant の認証コンテキストだけを使用する。
 - `kind = AIServices` の Microsoft Foundry リソースと `kind = OpenAI` のスタンドアロン Azure OpenAI リソースを検出し、Azure Model Resource としてユーザーに選択させる。
@@ -68,7 +74,7 @@ flowchart LR
 - Azure Model Resource ごとに Bridge-managed Provider を1つ作成し、複数リソースの Provider を同時に保持する。
 - GUI から Bridge-managed Provider を opencodex から解除する。Azure リソースは削除しない。
 - opencodex の health、モデル登録、sync を公開 `ocx` CLI で実行する。JSON 対応コマンドは構造化出力を解析し、非対応コマンドは終了コードと標準エラーを扱う。
-- Bridge 自身は tenant、subscription、resource group、account、deployment などの非 secret な選択状態だけを settings.json へ保存する。Azure の `AuthenticationRecord` は認証レコードファイルへ保存し、トークンキャッシュは Azure SDK に委ねる。
+- Bridge自身はtenant、subscription、resource group、account、deploymentなどの非secretな選択状態だけをsettings.jsonへ保存する。Azureの認証状態とトークンキャッシュはAzure CLIに委ねる。
 
 ### opencodex
 
@@ -141,17 +147,19 @@ flowchart LR
 
 ## Azure フロー
 
-1. Bridge は保存済みの `AuthenticationRecord` があれば永続キャッシュからサインインを再利用し、利用できない場合は `InteractiveBrowserCredential` で職場または学校アカウントへサインインする。
-2. Bridge は `armsubscriptions` でサインインアカウントがアクセスできる tenant を一覧する。
-3. ユーザーは tenant を1つ選択し、Bridge はその tenant の認証コンテキストで subscription を一覧する。
-4. ユーザーは subscription を1つ選択する。
-5. Bridge は選択された subscription 配下から `Microsoft.CognitiveServices/accounts` を列挙し、`kind = AIServices` または `kind = OpenAI` のリソースだけを Azure Model Resource 候補として表示する。
-6. ユーザーは resource group と Azure Model Resource を選択する。Foundry Project は列挙・選択しない。
-7. Bridge は `armcognitiveservices` で deployment を一覧する。
-8. Bridge は `AccountsClient.NewListModelsPager` で選択 resource にデプロイ可能な model、version、SKU、capacity、capabilities を取得する。
-9. Codex 用の候補には Codex Candidate Model だけを表示する。OpenAI 形式は `capabilities.responses == true`、非 OpenAI 形式は `capabilities.agentsV2 == true` を条件とし、モデル名の固定リストは持たない。これらは任意キーの能力値であるため、実リクエストの成功保証とは扱わない。
-10. ユーザーは GUI から deployment を作成または更新する。
-11. Bridge は Sync 実行時だけ endpoint と key 一覧を取得し、PrimaryKey だけを opencodex へ渡す。SecondaryKey は応答から破棄し、保存・転送しない。
+1. Bridgeは`az version`と`az account show`でAzure CLIの導入状態とアクティブなアカウントを診断する。
+2. Azure CLIが未導入の場合は処理を止め、GUIで利用者へインストールを求める。BridgeはAzure CLIを自動導入しない。
+3. Azure CLIが未ログインの場合、または利用者がアカウント変更を選んだ場合、GUI操作から`az login`を開始する。そのプロセスだけ`AZURE_CORE_LOGIN_EXPERIENCE_V2=off`を設定し、端末入力が必要なSubscription selectorを無効にする。Azure CLIの永続設定は変更しない。
+4. Bridgeは`AzureCLICredential`と`armsubscriptions`で、アクティブなAzure CLIアカウントがアクセスできるtenantを一覧する。
+5. ユーザーはtenantを1つ選択し、BridgeはTenant IDを指定した`AzureCLICredential`でsubscriptionを一覧する。
+6. ユーザーはsubscriptionを1つ選択する。以後のARMクライアントにはTenant IDとSubscription IDの両方を指定した資格情報を使う。
+7. Bridgeは選択されたsubscription配下から`Microsoft.CognitiveServices/accounts`を列挙し、`kind = AIServices`または`kind = OpenAI`のリソースだけをAzure Model Resource候補として表示する。
+8. ユーザーはresource groupとAzure Model Resourceを選択する。Foundry Projectは列挙・選択しない。
+9. Bridgeは`armcognitiveservices`でdeploymentを一覧する。
+10. Bridgeは`AccountsClient.NewListModelsPager`で選択resourceにデプロイ可能なmodel、version、SKU、capacity、capabilitiesを取得する。
+11. Codex用の候補にはCodex Candidate Modelだけを表示する。OpenAI形式は`capabilities.responses == true`、非OpenAI形式は`capabilities.agentsV2 == true`を条件とし、モデル名の固定リストは持たない。これらは任意キーの能力値であるため、実リクエストの成功保証とは扱わない。
+12. ユーザーはGUIからdeploymentを作成または更新する。
+13. BridgeはSync実行時だけendpointとkey一覧を取得し、PrimaryKeyだけをopencodexへ渡す。SecondaryKeyは応答から破棄し、保存・転送しない。
 
 ### Azure RBAC
 
@@ -272,7 +280,7 @@ Bridge の settings.json に保存してよいもの:
 - deployment name
 - opencodex port
 
-Azure SDK の `AuthenticationRecord` は settings.json とは別の認証レコードファイルへ保存する。OAuth access token と refresh token は Bridge が保存形式を管理しない。
+Azure CLIのログイン状態、OAuth access token、refresh tokenはAzure CLIの認証キャッシュに委ねる。Bridgeは認証レコードやトークンキャッシュを作成、読取、削除しない。
 
 Bridge の設定に保存してはいけないもの:
 
@@ -282,7 +290,7 @@ Bridge の設定に保存してはいけないもの:
 
 ## 初期 GUI
 
-- **Connect**: Azure サインイン状態、tenant、subscription、resource group、Azure Model Resource 選択。
+- **Connect**: Azure CLIの導入・サインイン状態、tenant、subscription、resource group、Azure Model Resource選択。
 - **Deployments**: deployment 一覧、詳細、作成フォーム、Capacity / version 更新。
 - **opencodex**: インストール状態、起動状態、port、ready 状態。
 - **Sync**: 選択 deployment、opencodex Provider プレビュー、適用、catalog sync 結果、接続テスト結果、Bridge-managed Provider 一覧、Codex からの解除。
@@ -292,6 +300,7 @@ Bridge の設定に保存してはいけないもの:
 ## 初期スコープ外
 
 - Azure Government、Azure China、Azure Stack など Public Azure 以外のクラウドには対応しない。
+- BridgeはAzure CLIを同梱、ダウンロード、インストール、更新しない。
 - Bridge は Node.js をダウンロード、インストール、更新しない。
 - Bridge は Windows Task Scheduler を直接操作せず、独自のサービス管理や昇格処理を実装しない。
 - Codex shim は使用しない。
@@ -305,4 +314,4 @@ Bridge の設定に保存してはいけないもの:
 - Bridge 側で provider fallback chain を実装しない。
 - 起動時やバックグラウンド監視で自動 Sync しない。
 - Azure リソース自体の新規作成は、明示要件になるまで実装しない。
-- 利用組織ごとの Entra アプリ登録や client secret の入力は要求しない。
+- Bridge独自または利用組織ごとのEntraアプリ登録、Client ID、client secretの入力は要求しない。

@@ -6,22 +6,17 @@ Microsoft Foundry / Azure OpenAI の deployment を opencodex 経由で Codex �
 
 Issue #2 の第1段階を実装済み。Wails v2 のデスクトップ画面から Azure の既存 Model Resource と Model Deployment を選択し、明示的な Sync 操作で opencodex の Provider、PrimaryKey、モデル、Codex カタログを順番に反映できる。
 
-Azure には `InteractiveBrowserCredential` でサインインし、認証レコードとトークンキャッシュはユーザー領域に保存する。Bridge の設定ファイルには secret を保存しない。Node.js と npm は事前に導入しておく必要があり、Bridge は自動導入しない。
+Azure認証にはAzure CLIのログイン済み資格情報を使用する。Bridge独自のEntraアプリを利用者Tenantへ追加せず、Client IDやclient secretを要求しない。Bridgeの設定ファイルにはsecretを保存しない。Azure CLI、Node.js、npmは事前に導入しておく必要があり、Bridgeは自動導入しない。
 
-実際の Azure 接続と Responses 接続テストには、プロジェクト所有の Entra パブリッククライアント ID、Azure のアクセス権、既存の Azure Model Resource と Model Deployment が必要である。リリースビルドには client ID を埋め込み、開発時だけ環境変数で上書きする。
+実際のAzure接続とResponses接続テストには、Azure CLI、Azureのアクセス権、既存のAzure Model ResourceとModel Deploymentが必要である。Connect画面から`az login`を開始でき、既存のAzure CLIログインも再利用する。
 
 ## 開発要件
 
 - Windows
 - Go 1.25 以上
+- Azure CLI
 - Node.js 18 以上と npm
 - Wails v2 CLI
-
-開発時はプロジェクト所有のパブリッククライアント ID を設定する。リリースビルドでは `main.embeddedAzureClientID` へ値を埋め込む。
-
-```powershell
-$env:FOUNDRYCODEX_AZURE_CLIENT_ID = "<public-client-id>"
-```
 
 Node.js が利用できる状態で、次を実行する。
 
@@ -32,12 +27,6 @@ npm ci
 npm run build
 Pop-Location
 wails build
-```
-
-リリース用に client ID を埋め込む場合は、Wails の linker flag を指定する。
-
-```powershell
-wails build -ldflags "-X main.embeddedAzureClientID=<public-client-id>"
 ```
 
 `ocx` が PATH にない場合、GUI の「利用者の承認でopencodexを導入」から npm を使って `%LOCALAPPDATA%\FoundryCodexBridge\opencodex` に導入する。グローバル npm 環境と PATH は変更しない。

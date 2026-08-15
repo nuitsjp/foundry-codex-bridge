@@ -4,162 +4,111 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity/cache"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v4"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources/v4"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/subscription/armsubscription"
 )
 
-var ErrClientNotConfigured = errors.New("Azure client ID is not configured")
-
-const tokenCacheName = "foundry-codex-bridge"
-
 type SDKClient struct {
-	dataDir        string
-	clientID       string
-	credential     *azidentity.InteractiveBrowserCredential
-	cache          azidentity.Cache
-	authRecord     azidentity.AuthenticationRecord
-	authState      AuthState
-	initialization error
+	runner    CLIRunner
+	authState AuthState
 }
 
-func NewSDKClient(dataDir, clientID string) *SDKClient {
-	client := &SDKClient{dataDir: dataDir, clientID: strings.TrimSpace(clientID)}
-	if client.clientID == "" {
-		client.initialization = ErrClientNotConfigured
-		return client
-	}
-
-	if err := os.MkdirAll(dataDir, 0o700); err != nil {
-		client.initialization = err
-		return client
-	}
-	persistentCache, err := cache.New(&cache.Options{Name: tokenCacheName})
-	if err != nil {
-		client.initialization = err
-		return client
-	}
-	client.cache = persistentCache
-	client.authRecord = client.loadAuthRecord()
-	credential, err := azidentity.NewInteractiveBrowserCredential(&azidentity.InteractiveBrowserCredentialOptions{
-		ClientID:                   client.clientID,
-		TenantID:                   "organizations",
-		AdditionallyAllowedTenants: []string{"*"},
-		AuthenticationRecord:       client.authRecord,
-		Cache:                      persistentCache,
-	})
-	if err != nil {
-		client.initialization = err
-		return client
-	}
-	client.credential = credential
-	if client.authRecord.Username != "" {
-		client.authState = AuthState{
-			SignedIn: true,
-			Username: client.authRecord.Username,
-			TenantID: client.authRecord.TenantID,
-		}
-	}
-	return client
+func NewSDKClient() *SDKClient {
+	return NewSDKClientWithRunner(localCLIRunner{})
 }
 
-func (c *SDKClient) AuthState() AuthState {
-	return c.authState
+func NewSDKClientWithRunner(runner CLIRunner) *SDKClient {
+	return &SDKClient{runner: runner}
+}
+
+func (c *SDKClient) AuthState(ctx context.Context) AuthState {
+	state := c.readCLIState(ctx)
+	c.authState = state
+	return state
 }
 
 func (c *SDKClient) Authenticate(ctx context.Context) (AuthState, error) {
-	if c.initialization != nil {
-		return AuthState{}, c.initialization
+	state := c.readCLIState(ctx)
+	c.authState = state
+	if !state.CLIInstalled {
+		return state, ErrAzureCLINotInstalled
 	}
-	record, err := c.credential.Authenticate(ctx, nil)
+	_, err := c.runner.Run(ctx, "login", "--allow-no-subscriptions", "--output", "none", "--only-show-errors")
 	if err != nil {
-		return AuthState{}, err
+		return state, errors.New("Azure CLI sign-in failed")
 	}
-	if err := c.saveAuthRecord(record); err != nil {
-		return AuthState{}, err
+	state = c.readCLIState(ctx)
+	c.authState = state
+	if !state.SignedIn {
+		return state, errors.New("Azure CLI sign-in did not produce an active account")
 	}
-	c.authRecord = record
-	c.authState = AuthState{SignedIn: true, Username: record.Username, TenantID: record.TenantID}
-	return c.authState, nil
-}
-
-func (c *SDKClient) SignOut(_ context.Context) error {
-	c.authRecord = azidentity.AuthenticationRecord{}
-	c.authState = AuthState{}
-	if c.dataDir == "" {
-		return nil
-	}
-	if err := os.Remove(c.authRecordPath()); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	return nil
+	return state, nil
 }
 
 func (c *SDKClient) ready() error {
-	if c.initialization != nil {
-		return c.initialization
+	if !c.authState.CLIInstalled {
+		return ErrAzureCLINotInstalled
 	}
-	if c.credential == nil || !c.authState.SignedIn {
-		return errors.New("Azure sign-in is required")
+	if !c.authState.SignedIn {
+		return errors.New("Azure CLI sign-in is required")
 	}
 	return nil
 }
 
-func (c *SDKClient) credentialForTenant(tenantID string) (*azidentity.InteractiveBrowserCredential, error) {
+func (c *SDKClient) credentialForScope(tenantID, subscriptionID string) (*azidentity.AzureCLICredential, error) {
 	if err := c.ready(); err != nil {
 		return nil, err
 	}
 	tenantID = strings.TrimSpace(tenantID)
-	if tenantID == "" {
-		return nil, errors.New("Azure tenant must be selected")
-	}
-	return azidentity.NewInteractiveBrowserCredential(&azidentity.InteractiveBrowserCredentialOptions{
-		ClientID:                   c.clientID,
-		TenantID:                   tenantID,
-		AdditionallyAllowedTenants: []string{"*"},
-		AuthenticationRecord:       c.authRecord,
-		Cache:                      c.cache,
+	return azidentity.NewAzureCLICredential(&azidentity.AzureCLICredentialOptions{
+		TenantID:     tenantID,
+		Subscription: strings.TrimSpace(subscriptionID),
 	})
 }
 
-func (c *SDKClient) loadAuthRecord() azidentity.AuthenticationRecord {
-	data, err := os.ReadFile(c.authRecordPath())
+func (c *SDKClient) readCLIState(ctx context.Context) AuthState {
+	versionResult, err := c.runner.Run(ctx, "version", "--output", "json")
 	if err != nil {
-		return azidentity.AuthenticationRecord{}
+		return AuthState{Message: "Azure CLI is not installed"}
 	}
-	var record azidentity.AuthenticationRecord
-	if json.Unmarshal(data, &record) != nil {
-		return azidentity.AuthenticationRecord{}
+	state := AuthState{CLIInstalled: true, Message: "Azure CLI sign-in is required"}
+	var versions struct {
+		AzureCLI string `json:"azure-cli"`
 	}
-	return record
-}
-
-func (c *SDKClient) saveAuthRecord(record azidentity.AuthenticationRecord) error {
-	data, err := json.Marshal(record)
+	if json.Unmarshal([]byte(versionResult.Stdout), &versions) == nil {
+		state.CLIVersion = versions.AzureCLI
+	}
+	accountResult, err := c.runner.Run(ctx, "account", "show", "--output", "json", "--only-show-errors")
 	if err != nil {
-		return err
+		return state
 	}
-	if err := os.MkdirAll(c.dataDir, 0o700); err != nil {
-		return err
+	var account struct {
+		TenantID string `json:"tenantId"`
+		User     struct {
+			Name string `json:"name"`
+		} `json:"user"`
 	}
-	return os.WriteFile(c.authRecordPath(), data, 0o600)
-}
-
-func (c *SDKClient) authRecordPath() string {
-	return filepath.Join(c.dataDir, "authentication-record.json")
+	if json.Unmarshal([]byte(accountResult.Stdout), &account) != nil || strings.TrimSpace(account.TenantID) == "" {
+		state.Message = "Azure CLI returned an invalid active account"
+		return state
+	}
+	state.SignedIn = true
+	state.Username = account.User.Name
+	state.TenantID = account.TenantID
+	state.Message = "Azure CLI is signed in"
+	return state
 }
 
 func (c *SDKClient) Tenants(ctx context.Context) ([]Tenant, error) {
-	if err := c.ready(); err != nil {
+	credential, err := c.credentialForScope("", "")
+	if err != nil {
 		return nil, err
 	}
-	client, err := armsubscription.NewTenantsClient(c.credential, nil)
+	client, err := armsubscription.NewTenantsClient(credential, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -179,7 +128,7 @@ func (c *SDKClient) Tenants(ctx context.Context) ([]Tenant, error) {
 }
 
 func (c *SDKClient) Subscriptions(ctx context.Context, tenantID string) ([]Subscription, error) {
-	credential, err := c.credentialForTenant(tenantID)
+	credential, err := c.credentialForScope(tenantID, "")
 	if err != nil {
 		return nil, err
 	}
@@ -207,7 +156,7 @@ func (c *SDKClient) Subscriptions(ctx context.Context, tenantID string) ([]Subsc
 }
 
 func (c *SDKClient) ResourceGroups(ctx context.Context, tenantID, subscriptionID string) ([]ResourceGroup, error) {
-	credential, err := c.credentialForTenant(tenantID)
+	credential, err := c.credentialForScope(tenantID, subscriptionID)
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +179,7 @@ func (c *SDKClient) ResourceGroups(ctx context.Context, tenantID, subscriptionID
 }
 
 func (c *SDKClient) ModelResources(ctx context.Context, tenantID, subscriptionID, resourceGroup string) ([]ModelResource, error) {
-	credential, err := c.credentialForTenant(tenantID)
+	credential, err := c.credentialForScope(tenantID, subscriptionID)
 	if err != nil {
 		return nil, err
 	}
@@ -256,7 +205,7 @@ func (c *SDKClient) ModelResources(ctx context.Context, tenantID, subscriptionID
 }
 
 func (c *SDKClient) GetModelResource(ctx context.Context, tenantID, subscriptionID, resourceGroup, resourceName string) (ModelResource, error) {
-	credential, err := c.credentialForTenant(tenantID)
+	credential, err := c.credentialForScope(tenantID, subscriptionID)
 	if err != nil {
 		return ModelResource{}, err
 	}
@@ -275,7 +224,7 @@ func (c *SDKClient) GetModelResource(ctx context.Context, tenantID, subscription
 }
 
 func (c *SDKClient) Deployments(ctx context.Context, tenantID, subscriptionID, resourceGroup, resourceName string) ([]Deployment, error) {
-	credential, err := c.credentialForTenant(tenantID)
+	credential, err := c.credentialForScope(tenantID, subscriptionID)
 	if err != nil {
 		return nil, err
 	}
@@ -300,7 +249,7 @@ func (c *SDKClient) Deployments(ctx context.Context, tenantID, subscriptionID, r
 }
 
 func (c *SDKClient) Models(ctx context.Context, tenantID, subscriptionID, resourceGroup, resourceName string) ([]DeployableModel, error) {
-	credential, err := c.credentialForTenant(tenantID)
+	credential, err := c.credentialForScope(tenantID, subscriptionID)
 	if err != nil {
 		return nil, err
 	}
@@ -337,7 +286,7 @@ func (c *SDKClient) Models(ctx context.Context, tenantID, subscriptionID, resour
 }
 
 func (c *SDKClient) ListKeys(ctx context.Context, tenantID, subscriptionID, resourceGroup, resourceName string) (KeyBundle, error) {
-	credential, err := c.credentialForTenant(tenantID)
+	credential, err := c.credentialForScope(tenantID, subscriptionID)
 	if err != nil {
 		return KeyBundle{}, err
 	}

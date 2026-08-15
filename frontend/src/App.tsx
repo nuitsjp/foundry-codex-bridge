@@ -23,7 +23,7 @@ function selectExisting<T>(values: T[], preferred: string | undefined, key: (val
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("connect");
-  const [auth, setAuth] = useState({ signedIn: false, username: "", tenantId: "" });
+  const [auth, setAuth] = useState({ cliInstalled: false, cliVersion: "", signedIn: false, username: "", tenantId: "", message: "" });
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [groups, setGroups] = useState<ResourceGroup[]>([]);
@@ -71,21 +71,6 @@ export default function App() {
     setProviderId("");
     setConfirmCosts(false);
     setSyncResult(null);
-  }
-
-  function clearAzureSelection() {
-    setTenants([]);
-    setSubscriptions([]);
-    setGroups([]);
-    setResources([]);
-    setDeployments([]);
-    setModels([]);
-    setTenantId("");
-    setSubscriptionId("");
-    setResourceGroup("");
-    setResourceName("");
-    setDeploymentName("");
-    clearSyncSelection();
   }
 
   async function loadResourceDetailsFor(tenant: string, subscription: string, group: string, resource: string, preferredDeployment?: string) {
@@ -160,7 +145,7 @@ export default function App() {
   }
 
   async function signIn() {
-    await run("ブラウザ認証を待機中", async () => {
+    await run("Azure CLIのサインインを待機中", async () => {
       const value = await api.signIn();
       setAuth(value);
       await loadHierarchy();
@@ -204,14 +189,6 @@ export default function App() {
     clearSyncSelection();
   }
 
-  async function signOut() {
-    await run("サインアウト中", async () => {
-      await api.signOut();
-      setAuth({ signedIn: false, username: "", tenantId: "" });
-      clearAzureSelection();
-    });
-  }
-
   async function prepareOpenCodex() {
     await run("opencodexを準備中", async () => setOpenCodex(await api.prepareOpenCodex()));
   }
@@ -240,7 +217,7 @@ export default function App() {
         </div>
         <div className={`status-pill ${auth.signedIn ? "ready" : "warning"}`}>
           <span className="status-dot" />
-          {auth.signedIn ? `サインイン済み: ${auth.username}` : "Azure未接続"}
+          {auth.signedIn ? `Azure CLI: ${auth.username}` : auth.cliInstalled ? "Azure CLI未接続" : "Azure CLI未検出"}
         </div>
       </header>
 
@@ -258,8 +235,12 @@ export default function App() {
 
         {tab === "connect" && <section className="panel">
           <div className="panel-heading"><div><p className="eyebrow">01 / CONNECT</p><h2>Azureへ接続</h2></div><span className="state-label">{auth.signedIn ? "READY" : "REQUIRED"}</span></div>
-          <p className="lead">Azure CLIは使わず、プロジェクト所有のマルチテナントEntraアプリでブラウザ認証します。</p>
-          {!auth.signedIn ? <button className="primary" onClick={signIn}>ブラウザでサインイン</button> : <button className="secondary" onClick={signOut}>サインアウト</button>}
+          <p className="lead">Azure CLIのログイン済み資格情報を使用します。Bridge独自のEntraアプリを利用者のTenantへ追加しません。</p>
+          {!auth.cliInstalled && <div className="notice warning">Azure CLIをインストールしてからBridgeを再起動してください。</div>}
+          <button className={auth.signedIn ? "secondary" : "primary"} onClick={signIn} disabled={!auth.cliInstalled}>
+            {auth.signedIn ? "Azure CLIでアカウントを変更" : "Azure CLIでサインイン"}
+          </button>
+          {auth.cliInstalled && <p className="hint">Azure CLI {auth.cliVersion || "version不明"}。Bridgeは共有セッションからサインアウトしません。</p>}
           <div className="field-grid">
             <label>Tenant<select value={tenantId} onChange={(event) => void selectTenant(event.target.value)} disabled={!auth.signedIn}><option value="">選択してください</option>{tenants.map((item) => <option key={item.id} value={item.id}>{item.displayName || item.id}</option>)}</select></label>
             <label>Subscription<select value={subscriptionId} onChange={(event) => void selectSubscription(event.target.value)} disabled={!tenantId}><option value="">選択してください</option>{subscriptions.map((item) => <option key={item.id} value={item.id}>{item.name || item.id}</option>)}</select></label>

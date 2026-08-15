@@ -21,8 +21,9 @@ type fakeAzure struct {
 func (f *fakeAzure) Authenticate(context.Context) (azure.AuthState, error) {
 	return azure.AuthState{SignedIn: true}, nil
 }
-func (f *fakeAzure) SignOut(context.Context) error                   { return nil }
-func (f *fakeAzure) AuthState() azure.AuthState                      { return azure.AuthState{SignedIn: true} }
+func (f *fakeAzure) AuthState(context.Context) azure.AuthState {
+	return azure.AuthState{CLIInstalled: true, SignedIn: true}
+}
 func (f *fakeAzure) Tenants(context.Context) ([]azure.Tenant, error) { return nil, nil }
 func (f *fakeAzure) Subscriptions(context.Context, string) ([]azure.Subscription, error) {
 	return nil, nil

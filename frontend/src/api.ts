@@ -1,7 +1,10 @@
 export type AuthState = {
+  cliInstalled: boolean;
+  cliVersion: string;
   signedIn: boolean;
   username: string;
   tenantId: string;
+  message: string;
 };
 
 export type Tenant = { id: string; displayName: string };
@@ -65,7 +68,6 @@ export type SyncResult = { ok: boolean; providerId: string; deployment: string; 
 type BoundApp = {
   Snapshot(): Promise<Snapshot>;
   SignIn(): Promise<AuthState>;
-  SignOut(): Promise<void>;
   Tenants(): Promise<Tenant[]>;
   Subscriptions(tenantId: string): Promise<Subscription[]>;
   ResourceGroups(tenantId: string, subscriptionId: string): Promise<ResourceGroup[]>;
@@ -102,7 +104,6 @@ function boundApp(): BoundApp {
 export const api = {
   snapshot: () => boundApp().Snapshot(),
   signIn: () => boundApp().SignIn(),
-  signOut: () => boundApp().SignOut(),
   tenants: () => boundApp().Tenants(),
   subscriptions: (tenantId: string) => boundApp().Subscriptions(tenantId),
   resourceGroups: (tenantId: string, subscriptionId: string) => boundApp().ResourceGroups(tenantId, subscriptionId),

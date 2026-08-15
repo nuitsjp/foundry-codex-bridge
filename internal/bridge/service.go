@@ -17,7 +17,7 @@ func (s *Service) Snapshot(ctx context.Context) Snapshot {
 		settings = Settings{ManagedProviders: map[string]string{}}
 	}
 	state, _ := s.opencodex.State(ctx)
-	auth := s.azure.AuthState()
+	auth := s.azure.AuthState(ctx)
 	return Snapshot{
 		Auth:             auth,
 		Selection:        settings.Selection,
@@ -28,10 +28,6 @@ func (s *Service) Snapshot(ctx context.Context) Snapshot {
 
 func (s *Service) SignIn(ctx context.Context) (AuthState, error) {
 	return s.azure.Authenticate(s.context(ctx))
-}
-
-func (s *Service) SignOut(ctx context.Context) error {
-	return s.azure.SignOut(s.context(ctx))
 }
 
 func (s *Service) Tenants(ctx context.Context) ([]Tenant, error) {
@@ -304,8 +300,8 @@ func deploymentIsCodexCandidate(deployment Deployment, models []DeployableModel)
 	return false
 }
 
-func NewAzureClient(dataDir, clientID string) azure.Client {
-	return azure.NewSDKClient(dataDir, clientID)
+func NewAzureClient() azure.Client {
+	return azure.NewSDKClient()
 }
 
 var _ opencodex.ManagerAPI = (*opencodex.Manager)(nil)
