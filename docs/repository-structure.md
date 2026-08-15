@@ -5,43 +5,46 @@ Wails v2 の標準構成を起点にし、Go 側は外部境界ごとの小さ�
 ```text
 .
 ├── build/
+│   ├── appicon.png
 │   └── windows/
 ├── docs/
 │   ├── adr/
 │   ├── architecture.md
+│   ├── development.md
 │   └── repository-structure.md
 ├── frontend/
 │   ├── src/
-│   │   ├── components/
-│   │   ├── features/
-│   │   │   ├── azure/
-│   │   │   ├── deployments/
-│   │   │   ├── opencodex/
-│   │   │   └── sync/
+│   │   ├── api.ts
 │   │   ├── App.tsx
-│   │   └── main.tsx
+│   │   ├── main.tsx
+│   │   ├── styles.css
+│   │   └── vite-env.d.ts
+│   ├── index.html
+│   ├── package-lock.json
 │   ├── package.json
+│   ├── tsconfig.json
 │   └── vite.config.ts
 ├── internal/
 │   ├── azure/
-│   │   ├── auth.go
-│   │   ├── subscriptions.go
-│   │   ├── accounts.go
-│   │   ├── deployments.go
-│   │   ├── models.go
-│   │   └── keys.go
+│   │   ├── client.go
+│   │   ├── candidates.go
+│   │   ├── errors.go
+│   │   ├── errors_test.go
+│   │   └── types.go
 │   ├── opencodex/
 │   │   ├── cli.go
 │   │   ├── installer.go
-│   │   ├── provider.go
-│   │   └── lifecycle.go
+│   │   ├── lifecycle.go
+│   │   ├── provider_test.go
+│   │   └── types.go
 │   ├── bridge/
 │   │   ├── service.go
 │   │   ├── settings.go
-│   │   └── sync.go
+│   │   ├── sync_test.go
+│   │   └── types.go
 │   └── platform/
-│       ├── paths_windows.go
-│       └── process_windows.go
+│       ├── paths_other.go
+│       └── paths_windows.go
 ├── app.go
 ├── main.go
 ├── wails.json
@@ -61,36 +64,31 @@ Wails v2 の標準構成を起点にし、Go 側は外部境界ごとの小さ�
 
 ## Go packages
 
-- `internal/azure`: Azure SDK client と Azure DTO mapping。
-- `internal/opencodex`: opencodex のインストールと、公開 `ocx` CLI を使ったプロセス制御、health、provider 管理。構造化出力があるコマンドは JSON を解析する。
+- `internal/azure`: Azure SDK client、Azure DTO mapping、認証レコード、認可エラーの分類。
+- `internal/opencodex`: opencodex のインストールと、公開 `ocx` CLI を使ったプロセス制御、health、Provider 管理。構造化出力があるコマンドは JSON を解析する。
 - `internal/bridge`: Azure と opencodex をまたぐアプリケーション use case。
-- `internal/platform`: Windows 固有の path と process 処理。
+- `internal/platform`: OS ごとのユーザー設定ディレクトリ解決。
 
 ## Frontend
 
-- `frontend/src/features/azure`: サインイン、subscription、resource group、account 選択。
-- `frontend/src/features/deployments`: deployment 一覧、作成、更新、状態表示。
-- `frontend/src/features/opencodex`: install / running / ready 状態。
-- `frontend/src/features/sync`: 選択 deployment を opencodex Provider へ適用する workflow。
-- `frontend/src/components`: 複数 feature で使う小さな UI component だけを置く。
+- `frontend/src/App.tsx`: Connect、Deployments、opencodex、Sync の4タブと状態遷移をまとめる。
+- `frontend/src/api.ts`: Wails bound method への型付き呼び出しをまとめる。
+- `frontend/src/components`: 複数の画面で使う UI component が必要になった場合だけ置く。
 
 ## Settings
 
-Bridge は非 secret な設定だけを `%APPDATA%\FoundryCodexBridge\settings.json` に保存する。
+Bridge は非 secret な端末固有設定だけを `%LOCALAPPDATA%\FoundryCodexBridge\settings.json` に保存する。Azure の認証レコードは同じアプリデータディレクトリの `authentication-record.json` に保存し、トークンキャッシュの保存は Azure SDK に委ねる。opencodex のインストール先や Provider 対応表を roaming profile へ持ち出さない。
 
 保存対象:
 
-- active Azure authentication record
-- Azure resource ID to Bridge-managed Provider ID mappings
+- Azure resource ID と Bridge-managed Provider ID の対応
 - last selected tenant
 - last selected subscription
 - last selected resource group
 - last selected Azure Model Resource
 - last selected deployment
-- opencodex port
-- managed opencodex path and version
 
-secret は Azure SDK token cache または opencodex credential storage に委ねる。
+secret は Azure SDK token cache または opencodex credential storage に委ねる。opencodex のインストール先、health が返す port、Node.js のバージョンは状態として検出し、settings.json には保存しない。
 
 ## Test layout
 
@@ -99,7 +97,7 @@ unit test は対象 package の隣に置く。
 ```text
 internal/
 ├── azure/
-│   └── deployments_test.go
+│   └── errors_test.go
 ├── opencodex/
 │   └── provider_test.go
 └── bridge/
