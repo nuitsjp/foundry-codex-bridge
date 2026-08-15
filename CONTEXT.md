@@ -1,6 +1,6 @@
 # FoundryCodex Bridge
 
-FoundryCodex Bridge は、Microsoft Foundry 上の Azure OpenAI デプロイを opencodex 経由で Codex から使えるようにする Windows デスクトップツールである。
+FoundryCodex Bridge は、Microsoft Foundry または Azure OpenAI の Model Deployment を opencodex 経由で Codex から使えるようにする Windows デスクトップツールである。
 
 ## Language
 
@@ -13,8 +13,8 @@ _Avoid_: Bridge proxy, Codex plugin
 _Avoid_: Foundry Account, Portal, Foundry portal, Azure account
 
 **Model Deployment**:
-Azure Model Resource 配下に作成されたモデルのデプロイ。デプロイ名、モデル識別子、バージョン、SKU、Capacity、プロビジョニング状態を持つ。
-_Avoid_: Model, endpoint
+Azure Model Resource 配下の `Microsoft.CognitiveServices/accounts/deployments` として作成された通常のモデルデプロイ。デプロイ名、モデル識別子、バージョン、SKU、Capacity、プロビジョニング状態を持つ。Managed Compute Deployment は含まない。
+_Avoid_: Model, endpoint, Managed Compute Deployment
 
 **Deployable Model**:
 Azure Model Resource へデプロイできるモデル。Codex から利用するには Model Deployment が必要である。
@@ -33,7 +33,7 @@ opencodex が管理する上流プロバイダー設定。エンドポイント�
 _Avoid_: Azure provider config, Codex provider
 
 **Bridge-managed Provider**:
-FoundryCodex Bridge が1つの Azure Model Resource に対応させて作成・更新する opencodex Provider。初回登録時に Provider ID を決め、登録後は同じ ID を使い続ける。複数の Bridge-managed Provider が同時に存在でき、それぞれ対応するリソースの Model Deployment を公開する。
+FoundryCodex Bridge が1つの Azure Model Resource に対応させて作成・更新する opencodex Provider。初回登録時に Provider ID を決め、登録後は同じ ID を使い続ける。複数の Bridge-managed Provider が同時に存在でき、それぞれ対応する1つ以上の Model Deployment を公開し、そのうち1つを既定モデルとする。
 _Avoid_: Shared Azure provider, deployment provider
 
 **Codex Catalog**:
