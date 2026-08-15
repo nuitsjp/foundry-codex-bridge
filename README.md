@@ -27,7 +27,7 @@ mise run init
 mise run doctor
 ```
 
-`mise run doctor`はプロジェクトの開発環境診断である。mise本体の診断は`mise doctor`で実行する。`init`がmise shimsをユーザー`PATH`へ初めて追加した場合、現在のPowerShellへ反映するためターミナルを一度再起動する。
+`mise run doctor`はプロジェクトの開発環境診断である。mise本体の診断は`mise doctor`で実行する。`init`がmise shimsをユーザー`PATH`とPowerShell profileへ登録した後、新しいPowerShell sessionで`mise doctor`を実行する。
 
 開発モードでアプリを起動する。
 

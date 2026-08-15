@@ -18,7 +18,7 @@ mise trust
 mise run init
 ```
 
-`mise trust`はリポジトリの`mise.toml`を確認した利用者が明示実行する。`init`はmise管理のGoとWailsを導入し、mise shimsをユーザー`PATH`へ登録し、Go modulesとfrontend依存を復元してからプロジェクトの`doctor`を実行する。Node.jsまたはAzure CLIがない場合は自動導入せず、導入先を表示して停止する。ユーザー`PATH`を初めて変更した場合、現在開いているPowerShellには反映されないため、`init`完了後にターミナルを一度再起動する。
+`mise trust`はリポジトリの`mise.toml`を確認した利用者が明示実行する。`init`はmise管理のGoとWailsを導入し、mise shimsをユーザー`PATH`へ登録してPowerShell profileの末尾でmiseを有効化し、Go modulesとfrontend依存を復元してからプロジェクトの`doctor`を実行する。Node.jsまたはAzure CLIがない場合は自動導入せず、導入先を表示して停止する。profile設定は新しいPowerShell sessionから有効になる。
 
 環境だけを再診断する場合は次を実行する。
 

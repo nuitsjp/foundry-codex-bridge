@@ -64,6 +64,54 @@ function Add-MiseShimsToPath {
     if (-not $processHasShims) {
         $env:Path = (@($shimsPath) + $processEntries) -join ';'
     }
+
+    Add-MiseShimsToPowerShellProfile
+}
+
+function Add-MiseShimsToPowerShellProfile {
+    $profilePath = $PROFILE.CurrentUserCurrentHost
+    $profileDirectory = Split-Path -Parent $profilePath
+    if (-not (Test-Path $profileDirectory)) {
+        $null = New-Item -ItemType Directory -Path $profileDirectory -Force
+    }
+
+    $startMarker = "# mise shims setup: start"
+    $endMarker = "# mise shims setup: end"
+    $block = @"
+$startMarker
+if (`$null -ne (Get-Command mise -ErrorAction SilentlyContinue)) {
+    (& mise activate pwsh) | Out-String | Invoke-Expression
+}
+$endMarker
+"@
+
+    $content = if (Test-Path $profilePath) {
+        [IO.File]::ReadAllText($profilePath)
+    } else {
+        ""
+    }
+    $pattern = "(?ms)^$([regex]::Escape($startMarker))\r?\n.*?^$([regex]::Escape($endMarker))\r?\n?"
+
+    $allHostsProfile = $PROFILE.CurrentUserAllHosts
+    if ($allHostsProfile -ne $profilePath -and (Test-Path $allHostsProfile)) {
+        $allHostsContent = [IO.File]::ReadAllText($allHostsProfile)
+        $cleanedAllHostsContent = [regex]::Replace($allHostsContent, $pattern, "", 1)
+        if ($cleanedAllHostsContent -ne $allHostsContent) {
+            [IO.File]::WriteAllText($allHostsProfile, $cleanedAllHostsContent, [Text.UTF8Encoding]::new($false))
+        }
+    }
+
+    if ([regex]::IsMatch($content, $pattern)) {
+        $updated = [regex]::Replace($content, $pattern, "$block`r`n", 1)
+    } else {
+        $separator = if ([string]::IsNullOrEmpty($content) -or $content.EndsWith("`n")) { "" } else { "`r`n" }
+        $updated = "$content$separator$block`r`n"
+    }
+
+    if ($updated -ne $content) {
+        [IO.File]::WriteAllText($profilePath, $updated, [Text.UTF8Encoding]::new($false))
+        Write-Host "PowerShell profileへmise shims設定を登録しました: $profilePath" -ForegroundColor Yellow
+    }
 }
 
 Require-ExternalTool -Label "Node.js" -Commands @("node.exe", "node") -InstallAdvice "Node.js 18以上を https://nodejs.org/ からインストールしてください。BridgeはNode.jsを自動インストールしません。"
