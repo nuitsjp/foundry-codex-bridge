@@ -17,6 +17,8 @@ import (
 
 var ErrClientNotConfigured = errors.New("Azure client ID is not configured")
 
+const tokenCacheName = "foundry-codex-bridge"
+
 type SDKClient struct {
 	dataDir        string
 	clientID       string
@@ -38,7 +40,7 @@ func NewSDKClient(dataDir, clientID string) *SDKClient {
 		client.initialization = err
 		return client
 	}
-	persistentCache, err := cache.New(nil)
+	persistentCache, err := cache.New(&cache.Options{Name: tokenCacheName})
 	if err != nil {
 		client.initialization = err
 		return client
@@ -46,10 +48,11 @@ func NewSDKClient(dataDir, clientID string) *SDKClient {
 	client.cache = persistentCache
 	client.authRecord = client.loadAuthRecord()
 	credential, err := azidentity.NewInteractiveBrowserCredential(&azidentity.InteractiveBrowserCredentialOptions{
-		ClientID:             client.clientID,
-		TenantID:             "organizations",
-		AuthenticationRecord: client.authRecord,
-		Cache:                persistentCache,
+		ClientID:                   client.clientID,
+		TenantID:                   "organizations",
+		AdditionallyAllowedTenants: []string{"*"},
+		AuthenticationRecord:       client.authRecord,
+		Cache:                      persistentCache,
 	})
 	if err != nil {
 		client.initialization = err
@@ -108,6 +111,23 @@ func (c *SDKClient) ready() error {
 	return nil
 }
 
+func (c *SDKClient) credentialForTenant(tenantID string) (*azidentity.InteractiveBrowserCredential, error) {
+	if err := c.ready(); err != nil {
+		return nil, err
+	}
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" {
+		return nil, errors.New("Azure tenant must be selected")
+	}
+	return azidentity.NewInteractiveBrowserCredential(&azidentity.InteractiveBrowserCredentialOptions{
+		ClientID:                   c.clientID,
+		TenantID:                   tenantID,
+		AdditionallyAllowedTenants: []string{"*"},
+		AuthenticationRecord:       c.authRecord,
+		Cache:                      c.cache,
+	})
+}
+
 func (c *SDKClient) loadAuthRecord() azidentity.AuthenticationRecord {
 	data, err := os.ReadFile(c.authRecordPath())
 	if err != nil {
@@ -159,10 +179,11 @@ func (c *SDKClient) Tenants(ctx context.Context) ([]Tenant, error) {
 }
 
 func (c *SDKClient) Subscriptions(ctx context.Context, tenantID string) ([]Subscription, error) {
-	if err := c.ready(); err != nil {
+	credential, err := c.credentialForTenant(tenantID)
+	if err != nil {
 		return nil, err
 	}
-	client, err := armsubscription.NewSubscriptionsClient(c.credential, nil)
+	client, err := armsubscription.NewSubscriptionsClient(credential, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -185,11 +206,12 @@ func (c *SDKClient) Subscriptions(ctx context.Context, tenantID string) ([]Subsc
 	return result, nil
 }
 
-func (c *SDKClient) ResourceGroups(ctx context.Context, subscriptionID string) ([]ResourceGroup, error) {
-	if err := c.ready(); err != nil {
+func (c *SDKClient) ResourceGroups(ctx context.Context, tenantID, subscriptionID string) ([]ResourceGroup, error) {
+	credential, err := c.credentialForTenant(tenantID)
+	if err != nil {
 		return nil, err
 	}
-	client, err := armresources.NewResourceGroupsClient(subscriptionID, c.credential, nil)
+	client, err := armresources.NewResourceGroupsClient(subscriptionID, credential, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -207,11 +229,12 @@ func (c *SDKClient) ResourceGroups(ctx context.Context, subscriptionID string) (
 	return result, nil
 }
 
-func (c *SDKClient) ModelResources(ctx context.Context, subscriptionID, resourceGroup string) ([]ModelResource, error) {
-	if err := c.ready(); err != nil {
+func (c *SDKClient) ModelResources(ctx context.Context, tenantID, subscriptionID, resourceGroup string) ([]ModelResource, error) {
+	credential, err := c.credentialForTenant(tenantID)
+	if err != nil {
 		return nil, err
 	}
-	client, err := armcognitiveservices.NewAccountsClient(subscriptionID, c.credential, nil)
+	client, err := armcognitiveservices.NewAccountsClient(subscriptionID, credential, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -232,11 +255,12 @@ func (c *SDKClient) ModelResources(ctx context.Context, subscriptionID, resource
 	return result, nil
 }
 
-func (c *SDKClient) GetModelResource(ctx context.Context, subscriptionID, resourceGroup, resourceName string) (ModelResource, error) {
-	if err := c.ready(); err != nil {
+func (c *SDKClient) GetModelResource(ctx context.Context, tenantID, subscriptionID, resourceGroup, resourceName string) (ModelResource, error) {
+	credential, err := c.credentialForTenant(tenantID)
+	if err != nil {
 		return ModelResource{}, err
 	}
-	client, err := armcognitiveservices.NewAccountsClient(subscriptionID, c.credential, nil)
+	client, err := armcognitiveservices.NewAccountsClient(subscriptionID, credential, nil)
 	if err != nil {
 		return ModelResource{}, err
 	}
@@ -250,11 +274,12 @@ func (c *SDKClient) GetModelResource(ctx context.Context, subscriptionID, resour
 	return accountToModelResource(&response.Account), nil
 }
 
-func (c *SDKClient) Deployments(ctx context.Context, subscriptionID, resourceGroup, resourceName string) ([]Deployment, error) {
-	if err := c.ready(); err != nil {
+func (c *SDKClient) Deployments(ctx context.Context, tenantID, subscriptionID, resourceGroup, resourceName string) ([]Deployment, error) {
+	credential, err := c.credentialForTenant(tenantID)
+	if err != nil {
 		return nil, err
 	}
-	client, err := armcognitiveservices.NewDeploymentsClient(subscriptionID, c.credential, nil)
+	client, err := armcognitiveservices.NewDeploymentsClient(subscriptionID, credential, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -274,11 +299,12 @@ func (c *SDKClient) Deployments(ctx context.Context, subscriptionID, resourceGro
 	return result, nil
 }
 
-func (c *SDKClient) Models(ctx context.Context, subscriptionID, resourceGroup, resourceName string) ([]DeployableModel, error) {
-	if err := c.ready(); err != nil {
+func (c *SDKClient) Models(ctx context.Context, tenantID, subscriptionID, resourceGroup, resourceName string) ([]DeployableModel, error) {
+	credential, err := c.credentialForTenant(tenantID)
+	if err != nil {
 		return nil, err
 	}
-	client, err := armcognitiveservices.NewAccountsClient(subscriptionID, c.credential, nil)
+	client, err := armcognitiveservices.NewAccountsClient(subscriptionID, credential, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -310,11 +336,12 @@ func (c *SDKClient) Models(ctx context.Context, subscriptionID, resourceGroup, r
 	return result, nil
 }
 
-func (c *SDKClient) ListKeys(ctx context.Context, subscriptionID, resourceGroup, resourceName string) (KeyBundle, error) {
-	if err := c.ready(); err != nil {
+func (c *SDKClient) ListKeys(ctx context.Context, tenantID, subscriptionID, resourceGroup, resourceName string) (KeyBundle, error) {
+	credential, err := c.credentialForTenant(tenantID)
+	if err != nil {
 		return KeyBundle{}, err
 	}
-	client, err := armcognitiveservices.NewAccountsClient(subscriptionID, c.credential, nil)
+	client, err := armcognitiveservices.NewAccountsClient(subscriptionID, credential, nil)
 	if err != nil {
 		return KeyBundle{}, err
 	}

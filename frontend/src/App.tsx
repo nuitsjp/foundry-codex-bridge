@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, type Deployment, type DeployableModel, type ModelResource, type OpenCodexState, type ResourceGroup, type Subscription, type SyncResult, type Tenant } from "./api";
+import { api, type Deployment, type DeployableModel, type ModelResource, type OpenCodexState, type ResourceGroup, type Selection, type Subscription, type SyncResult, type Tenant } from "./api";
 
 type Tab = "connect" | "deployments" | "opencodex" | "sync";
 
@@ -15,6 +15,11 @@ const emptyOpenCodex: OpenCodexState = {
   health: { ready: false, pid: 0, port: 0 },
   message: "読み込み中",
 };
+
+function selectExisting<T>(values: T[], preferred: string | undefined, key: (value: T) => string): string {
+  if (preferred && values.some((value) => key(value) === preferred)) return preferred;
+  return values.length > 0 ? key(values[0]) : "";
+}
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("connect");
@@ -44,13 +49,9 @@ export default function App() {
       const snapshot = await api.snapshot();
       setAuth(snapshot.auth);
       setOpenCodex(snapshot.openCodex);
-      setTenantId(snapshot.selection.tenantId);
-      setSubscriptionId(snapshot.selection.subscriptionId);
-      setResourceGroup(snapshot.selection.resourceGroup);
-      setResourceName(snapshot.selection.resourceName);
-      setDeploymentName(snapshot.selection.deploymentName);
-      setProviderId(snapshot.selection.providerId);
-      if (snapshot.auth.signedIn) await loadTenants();
+      if (snapshot.auth.signedIn) {
+        await loadHierarchy(snapshot.selection);
+      }
     });
   }, []);
 
@@ -66,66 +67,148 @@ export default function App() {
     }
   }
 
-  async function loadTenants() {
+  function clearSyncSelection() {
+    setProviderId("");
+    setConfirmCosts(false);
+    setSyncResult(null);
+  }
+
+  function clearAzureSelection() {
+    setTenants([]);
+    setSubscriptions([]);
+    setGroups([]);
+    setResources([]);
+    setDeployments([]);
+    setModels([]);
+    setTenantId("");
+    setSubscriptionId("");
+    setResourceGroup("");
+    setResourceName("");
+    setDeploymentName("");
+    clearSyncSelection();
+  }
+
+  async function loadResourceDetailsFor(tenant: string, subscription: string, group: string, resource: string, preferredDeployment?: string) {
+    if (!resource) {
+      setDeployments([]);
+      setModels([]);
+      setDeploymentName("");
+      return "";
+    }
+    const [deploymentValues, modelValues] = await Promise.all([
+      api.deployments(tenant, subscription, group, resource),
+      api.models(tenant, subscription, group, resource),
+    ]);
+    setDeployments(deploymentValues);
+    setModels(modelValues);
+    const deployment = selectExisting(deploymentValues, preferredDeployment, (value) => value.name);
+    setDeploymentName(deployment);
+    return deployment;
+  }
+
+  async function loadResourcesFor(tenant: string, subscription: string, group: string, preferredResource?: string, preferredDeployment?: string) {
+    if (!group) {
+      setResources([]);
+      setResourceName("");
+      await loadResourceDetailsFor(tenant, subscription, group, "");
+      return { resource: "", deployment: "" };
+    }
+    const values = await api.resources(tenant, subscription, group);
+    setResources(values);
+    const resource = selectExisting(values, preferredResource, (value) => value.name);
+    setResourceName(resource);
+    const deployment = await loadResourceDetailsFor(tenant, subscription, group, resource, preferredDeployment);
+    return { resource, deployment };
+  }
+
+  async function loadGroupsFor(tenant: string, subscription: string, preferredGroup?: string, preferredResource?: string, preferredDeployment?: string) {
+    if (!subscription) {
+      setGroups([]);
+      setResourceGroup("");
+      return loadResourcesFor(tenant, subscription, "");
+    }
+    const values = await api.resourceGroups(tenant, subscription);
+    setGroups(values);
+    const group = selectExisting(values, preferredGroup, (value) => value.name);
+    setResourceGroup(group);
+    return loadResourcesFor(tenant, subscription, group, preferredResource, preferredDeployment);
+  }
+
+  async function loadSubscriptionsFor(tenant: string, preferredSubscription?: string, preferredGroup?: string, preferredResource?: string, preferredDeployment?: string) {
+    if (!tenant) {
+      setSubscriptions([]);
+      setSubscriptionId("");
+      return loadGroupsFor(tenant, "");
+    }
+    const values = await api.subscriptions(tenant);
+    setSubscriptions(values);
+    const subscription = selectExisting(values, preferredSubscription, (value) => value.id);
+    setSubscriptionId(subscription);
+    return loadGroupsFor(tenant, subscription, preferredGroup, preferredResource, preferredDeployment);
+  }
+
+  async function loadHierarchy(preferred?: Partial<Selection>) {
     const values = await api.tenants();
     setTenants(values);
-    if (!tenantId && values.length > 0) setTenantId(values[0].id);
+    const tenant = selectExisting(values, preferred?.tenantId, (value) => value.id);
+    setTenantId(tenant);
+    const selected = await loadSubscriptionsFor(tenant, preferred?.subscriptionId, preferred?.resourceGroup, preferred?.resourceName, preferred?.deploymentName);
+    const restored = selected.resource === preferred?.resourceName && selected.deployment === preferred?.deploymentName;
+    setProviderId(restored ? preferred?.providerId ?? "" : "");
+    setConfirmCosts(false);
+    setSyncResult(null);
   }
 
   async function signIn() {
     await run("ブラウザ認証を待機中", async () => {
       const value = await api.signIn();
       setAuth(value);
-      await loadTenants();
+      await loadHierarchy();
     });
   }
 
-  async function loadSubscriptions(value: string) {
-    setTenantId(value);
-    setSubscriptionId("");
-    setGroups([]);
-    setResources([]);
+  async function selectTenant(value: string) {
     await run("Subscriptionを読み込み中", async () => {
-      const values = await api.subscriptions(value);
-      setSubscriptions(values);
-      if (values.length > 0) setSubscriptionId(values[0].id);
+      setTenantId(value);
+      clearSyncSelection();
+      await loadSubscriptionsFor(value);
     });
   }
 
-  async function loadGroups(value: string) {
-    setSubscriptionId(value);
-    setResourceGroup("");
-    setResources([]);
+  async function selectSubscription(value: string) {
     await run("Resource groupを読み込み中", async () => {
-      const values = await api.resourceGroups(value);
-      setGroups(values);
-      if (values.length > 0) setResourceGroup(values[0].name);
+      setSubscriptionId(value);
+      clearSyncSelection();
+      await loadGroupsFor(tenantId, value);
     });
   }
 
-  async function loadResources(value: string) {
-    setResourceGroup(value);
-    setResourceName("");
-    setDeployments([]);
-    setModels([]);
+  async function selectGroup(value: string) {
     await run("Azure Model Resourceを読み込み中", async () => {
-      const values = await api.resources(subscriptionId, value);
-      setResources(values);
-      if (values.length > 0) setResourceName(values[0].name);
+      setResourceGroup(value);
+      clearSyncSelection();
+      await loadResourcesFor(tenantId, subscriptionId, value);
     });
   }
 
-  async function loadResourceDetails(value: string) {
-    setResourceName(value);
-    setDeploymentName("");
+  async function selectResource(value: string) {
     await run("Deploymentを読み込み中", async () => {
-      const [deploymentValues, modelValues] = await Promise.all([
-        api.deployments(subscriptionId, resourceGroup, value),
-        api.models(subscriptionId, resourceGroup, value),
-      ]);
-      setDeployments(deploymentValues);
-      setModels(modelValues);
-      if (deploymentValues.length > 0) setDeploymentName(deploymentValues[0].name);
+      setResourceName(value);
+      clearSyncSelection();
+      await loadResourceDetailsFor(tenantId, subscriptionId, resourceGroup, value);
+    });
+  }
+
+  function selectDeployment(value: string) {
+    setDeploymentName(value);
+    clearSyncSelection();
+  }
+
+  async function signOut() {
+    await run("サインアウト中", async () => {
+      await api.signOut();
+      setAuth({ signedIn: false, username: "", tenantId: "" });
+      clearAzureSelection();
     });
   }
 
@@ -176,20 +259,20 @@ export default function App() {
         {tab === "connect" && <section className="panel">
           <div className="panel-heading"><div><p className="eyebrow">01 / CONNECT</p><h2>Azureへ接続</h2></div><span className="state-label">{auth.signedIn ? "READY" : "REQUIRED"}</span></div>
           <p className="lead">Azure CLIは使わず、プロジェクト所有のマルチテナントEntraアプリでブラウザ認証します。</p>
-          {!auth.signedIn ? <button className="primary" onClick={signIn}>ブラウザでサインイン</button> : <button className="secondary" onClick={() => void run("サインアウト中", async () => { await api.signOut(); setAuth({ signedIn: false, username: "", tenantId: "" }); })}>サインアウト</button>}
+          {!auth.signedIn ? <button className="primary" onClick={signIn}>ブラウザでサインイン</button> : <button className="secondary" onClick={signOut}>サインアウト</button>}
           <div className="field-grid">
-            <label>Tenant<select value={tenantId} onChange={(event) => void loadSubscriptions(event.target.value)} disabled={!auth.signedIn}><option value="">選択してください</option>{tenants.map((item) => <option key={item.id} value={item.id}>{item.displayName || item.id}</option>)}</select></label>
-            <label>Subscription<select value={subscriptionId} onChange={(event) => void loadGroups(event.target.value)} disabled={!tenantId}><option value="">選択してください</option>{subscriptions.map((item) => <option key={item.id} value={item.id}>{item.name || item.id}</option>)}</select></label>
-            <label>Resource group<select value={resourceGroup} onChange={(event) => void loadResources(event.target.value)} disabled={!subscriptionId}><option value="">選択してください</option>{groups.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}</select></label>
+            <label>Tenant<select value={tenantId} onChange={(event) => void selectTenant(event.target.value)} disabled={!auth.signedIn}><option value="">選択してください</option>{tenants.map((item) => <option key={item.id} value={item.id}>{item.displayName || item.id}</option>)}</select></label>
+            <label>Subscription<select value={subscriptionId} onChange={(event) => void selectSubscription(event.target.value)} disabled={!tenantId}><option value="">選択してください</option>{subscriptions.map((item) => <option key={item.id} value={item.id}>{item.name || item.id}</option>)}</select></label>
+            <label>Resource group<select value={resourceGroup} onChange={(event) => void selectGroup(event.target.value)} disabled={!subscriptionId}><option value="">選択してください</option>{groups.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}</select></label>
           </div>
         </section>}
 
         {tab === "deployments" && <section className="panel">
           <div className="panel-heading"><div><p className="eyebrow">02 / DEPLOYMENTS</p><h2>Model ResourceとDeployment</h2></div><span className="state-label">READ ONLY</span></div>
-          <label>Azure Model Resource<select value={resourceName} onChange={(event) => void loadResourceDetails(event.target.value)} disabled={!resourceGroup}><option value="">選択してください</option>{resources.map((item) => <option key={item.id} value={item.name}>{item.name} · {item.kind}</option>)}</select></label>
+          <label>Azure Model Resource<select value={resourceName} onChange={(event) => void selectResource(event.target.value)} disabled={!resourceGroup}><option value="">選択してください</option>{resources.map((item) => <option key={item.id} value={item.name}>{item.name} · {item.kind}</option>)}</select></label>
           {selectedResource?.disableLocalAuth && <div className="notice warning">このリソースはlocal authenticationが無効です。deploymentの閲覧はできますが、API keyを使うopencodex Syncは実行できません。</div>}
           <div className="split-grid">
-            <div><h3>既存Deployment</h3>{deployments.length === 0 ? <p className="muted">Deploymentがありません。</p> : <div className="card-list">{deployments.map((item) => <button className={deploymentName === item.name ? "list-card selected" : "list-card"} key={item.id} onClick={() => setDeploymentName(item.name)}><span>{item.name}</span><small>{item.modelName} · {item.modelVersion || "version未指定"} · {item.provisioningState || "状態不明"}</small></button>)}</div>}</div>
+            <div><h3>既存Deployment</h3>{deployments.length === 0 ? <p className="muted">Deploymentがありません。</p> : <div className="card-list">{deployments.map((item) => <button className={deploymentName === item.name ? "list-card selected" : "list-card"} key={item.id} onClick={() => selectDeployment(item.name)}><span>{item.name}</span><small>{item.modelName} · {item.modelVersion || "version未指定"} · {item.provisioningState || "状態不明"}</small></button>)}</div>}</div>
             <div><h3>Codex候補</h3>{candidateModels.length === 0 ? <p className="muted">capabilities.responses または capabilities.agentsV2 を満たすモデルがありません。</p> : <div className="card-list">{candidateModels.map((item) => <div className="list-card" key={`${item.name}-${item.version}`}><span>{item.name}</span><small>{item.format} · {item.version || "version未指定"}</small></div>)}</div>}<p className="hint">候補判定はAzureの能力値に基づくヒントであり、利用可否はSync後の接続テストで確認します。</p></div>
           </div>
         </section>}

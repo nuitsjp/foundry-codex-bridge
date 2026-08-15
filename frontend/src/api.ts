@@ -68,10 +68,10 @@ type BoundApp = {
   SignOut(): Promise<void>;
   Tenants(): Promise<Tenant[]>;
   Subscriptions(tenantId: string): Promise<Subscription[]>;
-  ResourceGroups(subscriptionId: string): Promise<ResourceGroup[]>;
-  ModelResources(subscriptionId: string, resourceGroup: string): Promise<ModelResource[]>;
-  Deployments(subscriptionId: string, resourceGroup: string, resourceName: string): Promise<Deployment[]>;
-  Models(subscriptionId: string, resourceGroup: string, resourceName: string): Promise<DeployableModel[]>;
+  ResourceGroups(tenantId: string, subscriptionId: string): Promise<ResourceGroup[]>;
+  ModelResources(tenantId: string, subscriptionId: string, resourceGroup: string): Promise<ModelResource[]>;
+  Deployments(tenantId: string, subscriptionId: string, resourceGroup: string, resourceName: string): Promise<Deployment[]>;
+  Models(tenantId: string, subscriptionId: string, resourceGroup: string, resourceName: string): Promise<DeployableModel[]>;
   PrepareOpenCodex(): Promise<OpenCodexState>;
   OpenCodexState(): Promise<OpenCodexState>;
   Sync(request: {
@@ -105,10 +105,10 @@ export const api = {
   signOut: () => boundApp().SignOut(),
   tenants: () => boundApp().Tenants(),
   subscriptions: (tenantId: string) => boundApp().Subscriptions(tenantId),
-  resourceGroups: (subscriptionId: string) => boundApp().ResourceGroups(subscriptionId),
-  resources: (subscriptionId: string, resourceGroup: string) => boundApp().ModelResources(subscriptionId, resourceGroup),
-  deployments: (subscriptionId: string, resourceGroup: string, resourceName: string) => boundApp().Deployments(subscriptionId, resourceGroup, resourceName),
-  models: (subscriptionId: string, resourceGroup: string, resourceName: string) => boundApp().Models(subscriptionId, resourceGroup, resourceName),
+  resourceGroups: (tenantId: string, subscriptionId: string) => boundApp().ResourceGroups(tenantId, subscriptionId),
+  resources: (tenantId: string, subscriptionId: string, resourceGroup: string) => boundApp().ModelResources(tenantId, subscriptionId, resourceGroup),
+  deployments: (tenantId: string, subscriptionId: string, resourceGroup: string, resourceName: string) => boundApp().Deployments(tenantId, subscriptionId, resourceGroup, resourceName),
+  models: (tenantId: string, subscriptionId: string, resourceGroup: string, resourceName: string) => boundApp().Models(tenantId, subscriptionId, resourceGroup, resourceName),
   prepareOpenCodex: () => boundApp().PrepareOpenCodex(),
   openCodexState: () => boundApp().OpenCodexState(),
   sync: (request: Parameters<BoundApp["Sync"]>[0]) => boundApp().Sync(request),

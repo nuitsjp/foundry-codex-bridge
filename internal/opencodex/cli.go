@@ -77,10 +77,19 @@ func redactError(err error, secret, stderr string) error {
 	if stderr != "" {
 		message += ": " + stderr
 	}
-	if secret != "" {
-		message = strings.ReplaceAll(message, secret, "[REDACTED]")
-	}
+	message = redactSecret(message, secret)
 	return errors.New(message)
+}
+
+func redactSecret(message, secret string) string {
+	if secret == "" {
+		return message
+	}
+	message = strings.ReplaceAll(message, secret, "[REDACTED]")
+	if trimmed := strings.TrimSpace(secret); trimmed != "" {
+		message = strings.ReplaceAll(message, trimmed, "[REDACTED]")
+	}
+	return message
 }
 
 func platformCommandName(name string) string {

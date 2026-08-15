@@ -39,7 +39,7 @@ type ManagerAPI interface {
 	State(context.Context) (State, error)
 	Prepare(context.Context) (State, error)
 	ProviderExists(context.Context, string) (bool, error)
-	InstallService(context.Context) error
+	EnsureService(context.Context) error
 	EnsureProvider(context.Context, string, string, string) error
 	AddPrimaryKey(context.Context, string, string) error
 	EnsureCustomModel(context.Context, string, string) error

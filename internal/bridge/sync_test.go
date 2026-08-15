@@ -12,8 +12,10 @@ import (
 )
 
 type fakeAzure struct {
-	resource azure.ModelResource
-	keys     azure.KeyBundle
+	resource    azure.ModelResource
+	deployments []azure.Deployment
+	models      []azure.DeployableModel
+	keys        azure.KeyBundle
 }
 
 func (f *fakeAzure) Authenticate(context.Context) (azure.AuthState, error) {
@@ -25,22 +27,22 @@ func (f *fakeAzure) Tenants(context.Context) ([]azure.Tenant, error) { return ni
 func (f *fakeAzure) Subscriptions(context.Context, string) ([]azure.Subscription, error) {
 	return nil, nil
 }
-func (f *fakeAzure) ResourceGroups(context.Context, string) ([]azure.ResourceGroup, error) {
+func (f *fakeAzure) ResourceGroups(context.Context, string, string) ([]azure.ResourceGroup, error) {
 	return nil, nil
 }
-func (f *fakeAzure) ModelResources(context.Context, string, string) ([]azure.ModelResource, error) {
+func (f *fakeAzure) ModelResources(context.Context, string, string, string) ([]azure.ModelResource, error) {
 	return []azure.ModelResource{f.resource}, nil
 }
-func (f *fakeAzure) Deployments(context.Context, string, string, string) ([]azure.Deployment, error) {
-	return []azure.Deployment{{Name: "gpt-4o"}}, nil
+func (f *fakeAzure) Deployments(context.Context, string, string, string, string) ([]azure.Deployment, error) {
+	return f.deployments, nil
 }
-func (f *fakeAzure) Models(context.Context, string, string, string) ([]azure.DeployableModel, error) {
-	return []azure.DeployableModel{{Name: "gpt-4o", CodexCandidate: true}}, nil
+func (f *fakeAzure) Models(context.Context, string, string, string, string) ([]azure.DeployableModel, error) {
+	return f.models, nil
 }
-func (f *fakeAzure) GetModelResource(context.Context, string, string, string) (azure.ModelResource, error) {
+func (f *fakeAzure) GetModelResource(context.Context, string, string, string, string) (azure.ModelResource, error) {
 	return f.resource, nil
 }
-func (f *fakeAzure) ListKeys(context.Context, string, string, string) (azure.KeyBundle, error) {
+func (f *fakeAzure) ListKeys(context.Context, string, string, string, string) (azure.KeyBundle, error) {
 	return f.keys, nil
 }
 
@@ -55,7 +57,7 @@ type fakeOpenCodex struct {
 func (f *fakeOpenCodex) State(context.Context) (opencodex.State, error)       { return f.state, nil }
 func (f *fakeOpenCodex) Prepare(context.Context) (opencodex.State, error)     { return f.state, nil }
 func (f *fakeOpenCodex) ProviderExists(context.Context, string) (bool, error) { return f.provider, nil }
-func (f *fakeOpenCodex) InstallService(context.Context) error                 { return f.step("service") }
+func (f *fakeOpenCodex) EnsureService(context.Context) error                  { return f.step("service") }
 func (f *fakeOpenCodex) EnsureProvider(context.Context, string, string, string) error {
 	return f.step("provider")
 }
@@ -90,10 +92,16 @@ func (f *fakeSettings) Load() (Settings, error) {
 func (f *fakeSettings) Save(value Settings) error { f.value = value; return nil }
 
 func newFakeService(ocx *fakeOpenCodex, settings *fakeSettings) *Service {
-	return NewService(&fakeAzure{
-		resource: azure.ModelResource{ID: "/subscriptions/s/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/account", Name: "account", Endpoint: "https://account.openai.azure.com"},
-		keys:     azure.KeyBundle{PrimaryKey: "primary-secret"},
-	}, ocx, settings)
+	return NewService(newFakeAzure(), ocx, settings)
+}
+
+func newFakeAzure() *fakeAzure {
+	return &fakeAzure{
+		resource:    azure.ModelResource{ID: "/subscriptions/s/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/account", Name: "account", Endpoint: "https://account.openai.azure.com"},
+		deployments: []azure.Deployment{{Name: "gpt-4o", ModelName: "gpt-4o", ModelFormat: "OpenAI", ModelVersion: "2024-11-20"}},
+		models:      []azure.DeployableModel{{Name: "gpt-4o", Format: "OpenAI", Version: "2024-11-20", CodexCandidate: true}},
+		keys:        azure.KeyBundle{PrimaryKey: "primary-secret"},
+	}
 }
 
 func TestSyncConvergesWithoutPersistingKey(t *testing.T) {
@@ -140,5 +148,21 @@ func TestSyncRequiresCostConfirmation(t *testing.T) {
 	result := newFakeService(ocx, &fakeSettings{}).Sync(context.Background(), SyncRequest{TenantID: "tenant", SubscriptionID: "s", ResourceGroup: "rg", ResourceName: "account", DeploymentName: "gpt-4o"})
 	if result.OK || len(ocx.called) != 0 {
 		t.Fatalf("Sync ran without cost confirmation: %#v", result)
+	}
+}
+
+func TestSyncRejectsDeploymentOutsideCodexCandidatesBeforeOpenCodexChanges(t *testing.T) {
+	ocx := &fakeOpenCodex{state: opencodex.State{NodeInfo: opencodex.NodeInfo{NodeInstalled: true, NpmInstalled: true, Compatible: true}, Installed: true}}
+	azureClient := newFakeAzure()
+	azureClient.models[0].CodexCandidate = false
+	service := NewService(azureClient, ocx, &fakeSettings{})
+
+	result := service.Sync(context.Background(), SyncRequest{TenantID: "tenant", SubscriptionID: "s", ResourceGroup: "rg", ResourceName: "account", DeploymentName: "gpt-4o", ConfirmCosts: true})
+
+	if result.OK || len(ocx.called) != 0 {
+		t.Fatalf("Sync changed opencodex for an unsupported deployment: %#v, calls=%v", result, ocx.called)
+	}
+	if len(result.Stages) != 1 || result.Stages[0].Name != "azure-deployment" {
+		t.Fatalf("unexpected failure stage: %#v", result.Stages)
 	}
 }

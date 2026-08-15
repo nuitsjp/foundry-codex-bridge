@@ -65,10 +65,10 @@ type Client interface {
 	AuthState() AuthState
 	Tenants(context.Context) ([]Tenant, error)
 	Subscriptions(context.Context, string) ([]Subscription, error)
-	ResourceGroups(context.Context, string) ([]ResourceGroup, error)
-	ModelResources(context.Context, string, string) ([]ModelResource, error)
-	Deployments(context.Context, string, string, string) ([]Deployment, error)
-	Models(context.Context, string, string, string) ([]DeployableModel, error)
-	GetModelResource(context.Context, string, string, string) (ModelResource, error)
-	ListKeys(context.Context, string, string, string) (KeyBundle, error)
+	ResourceGroups(context.Context, string, string) ([]ResourceGroup, error)
+	ModelResources(context.Context, string, string, string) ([]ModelResource, error)
+	Deployments(context.Context, string, string, string, string) ([]Deployment, error)
+	Models(context.Context, string, string, string, string) ([]DeployableModel, error)
+	GetModelResource(context.Context, string, string, string, string) (ModelResource, error)
+	ListKeys(context.Context, string, string, string, string) (KeyBundle, error)
 }

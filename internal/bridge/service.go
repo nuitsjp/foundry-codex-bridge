@@ -42,20 +42,20 @@ func (s *Service) Subscriptions(ctx context.Context, tenantID string) ([]Subscri
 	return s.azure.Subscriptions(s.context(ctx), tenantID)
 }
 
-func (s *Service) ResourceGroups(ctx context.Context, subscriptionID string) ([]ResourceGroup, error) {
-	return s.azure.ResourceGroups(s.context(ctx), subscriptionID)
+func (s *Service) ResourceGroups(ctx context.Context, tenantID, subscriptionID string) ([]ResourceGroup, error) {
+	return s.azure.ResourceGroups(s.context(ctx), tenantID, subscriptionID)
 }
 
-func (s *Service) ModelResources(ctx context.Context, subscriptionID, resourceGroup string) ([]ModelResource, error) {
-	return s.azure.ModelResources(s.context(ctx), subscriptionID, resourceGroup)
+func (s *Service) ModelResources(ctx context.Context, tenantID, subscriptionID, resourceGroup string) ([]ModelResource, error) {
+	return s.azure.ModelResources(s.context(ctx), tenantID, subscriptionID, resourceGroup)
 }
 
-func (s *Service) Deployments(ctx context.Context, subscriptionID, resourceGroup, resourceName string) ([]Deployment, error) {
-	return s.azure.Deployments(s.context(ctx), subscriptionID, resourceGroup, resourceName)
+func (s *Service) Deployments(ctx context.Context, tenantID, subscriptionID, resourceGroup, resourceName string) ([]Deployment, error) {
+	return s.azure.Deployments(s.context(ctx), tenantID, subscriptionID, resourceGroup, resourceName)
 }
 
-func (s *Service) Models(ctx context.Context, subscriptionID, resourceGroup, resourceName string) ([]DeployableModel, error) {
-	return s.azure.Models(s.context(ctx), subscriptionID, resourceGroup, resourceName)
+func (s *Service) Models(ctx context.Context, tenantID, subscriptionID, resourceGroup, resourceName string) ([]DeployableModel, error) {
+	return s.azure.Models(s.context(ctx), tenantID, subscriptionID, resourceGroup, resourceName)
 }
 
 func (s *Service) PrepareOpenCodex(ctx context.Context) (OpenCodexState, error) {
@@ -77,7 +77,7 @@ func (s *Service) Sync(ctx context.Context, request SyncRequest) SyncResult {
 	if err := validateSyncRequest(request); err != nil {
 		return failSync(result, "validate", err.Error())
 	}
-	resource, err := s.azure.GetModelResource(ctx, request.SubscriptionID, request.ResourceGroup, request.ResourceName)
+	resource, err := s.azure.GetModelResource(ctx, request.TenantID, request.SubscriptionID, request.ResourceGroup, request.ResourceName)
 	if err != nil {
 		return failSync(result, "azure-resource", safeErrorMessage(err))
 	}
@@ -87,19 +87,26 @@ func (s *Service) Sync(ctx context.Context, request SyncRequest) SyncResult {
 	if strings.TrimSpace(resource.Endpoint) == "" {
 		return failSync(result, "azure-resource", "Azure Model Resource did not return an endpoint")
 	}
-	deployments, err := s.azure.Deployments(ctx, request.SubscriptionID, request.ResourceGroup, request.ResourceName)
+	deployments, err := s.azure.Deployments(ctx, request.TenantID, request.SubscriptionID, request.ResourceGroup, request.ResourceName)
 	if err != nil {
 		return failSync(result, "azure-deployments", safeErrorMessage(err))
 	}
-	deploymentExists := false
+	var selectedDeployment Deployment
 	for _, deployment := range deployments {
 		if deployment.Name == request.DeploymentName {
-			deploymentExists = true
+			selectedDeployment = deployment
 			break
 		}
 	}
-	if !deploymentExists {
+	if selectedDeployment.Name == "" {
 		return failSync(result, "azure-deployment", "the selected deployment does not exist in the Azure Model Resource")
+	}
+	models, err := s.azure.Models(ctx, request.TenantID, request.SubscriptionID, request.ResourceGroup, request.ResourceName)
+	if err != nil {
+		return failSync(result, "azure-models", safeErrorMessage(err))
+	}
+	if !deploymentIsCodexCandidate(selectedDeployment, models) {
+		return failSync(result, "azure-deployment", "the selected deployment is not supported by the opencodex Codex route")
 	}
 	settings, err := s.settings.Load()
 	if err != nil {
@@ -140,8 +147,8 @@ func (s *Service) Sync(ctx context.Context, request SyncRequest) SyncResult {
 		return failSync(result, "provider", "Provider ID is already used by an unmanaged opencodex Provider")
 	}
 
-	if err := s.runStage(&result, "service", "Install opencodex service", func() error {
-		return s.opencodex.InstallService(ctx)
+	if err := s.runStage(&result, "service", "Ensure opencodex service", func() error {
+		return s.opencodex.EnsureService(ctx)
 	}); err != nil {
 		return result
 	}
@@ -160,7 +167,7 @@ func (s *Service) Sync(ctx context.Context, request SyncRequest) SyncResult {
 		return failSync(result, "settings", "Bridge settings could not be saved")
 	}
 
-	keys, err := s.azure.ListKeys(ctx, request.SubscriptionID, request.ResourceGroup, request.ResourceName)
+	keys, err := s.azure.ListKeys(ctx, request.TenantID, request.SubscriptionID, request.ResourceGroup, request.ResourceName)
 	if err != nil {
 		return failSync(result, "key", safeErrorMessage(err))
 	}
@@ -279,6 +286,22 @@ func openAIBaseURL(endpoint string) string {
 		return endpoint
 	}
 	return endpoint + "/openai"
+}
+
+func deploymentIsCodexCandidate(deployment Deployment, models []DeployableModel) bool {
+	for _, model := range models {
+		if !model.CodexCandidate || !strings.EqualFold(model.Name, deployment.ModelName) {
+			continue
+		}
+		if deployment.ModelFormat != "" && !strings.EqualFold(model.Format, deployment.ModelFormat) {
+			continue
+		}
+		if deployment.ModelVersion != "" && model.Version != deployment.ModelVersion {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 func NewAzureClient(dataDir, clientID string) azure.Client {

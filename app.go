@@ -58,20 +58,20 @@ func (a *App) Subscriptions(tenantID string) ([]bridge.Subscription, error) {
 	return a.service.Subscriptions(a.ctx, tenantID)
 }
 
-func (a *App) ResourceGroups(subscriptionID string) ([]bridge.ResourceGroup, error) {
-	return a.service.ResourceGroups(a.ctx, subscriptionID)
+func (a *App) ResourceGroups(tenantID, subscriptionID string) ([]bridge.ResourceGroup, error) {
+	return a.service.ResourceGroups(a.ctx, tenantID, subscriptionID)
 }
 
-func (a *App) ModelResources(subscriptionID, resourceGroup string) ([]bridge.ModelResource, error) {
-	return a.service.ModelResources(a.ctx, subscriptionID, resourceGroup)
+func (a *App) ModelResources(tenantID, subscriptionID, resourceGroup string) ([]bridge.ModelResource, error) {
+	return a.service.ModelResources(a.ctx, tenantID, subscriptionID, resourceGroup)
 }
 
-func (a *App) Deployments(subscriptionID, resourceGroup, resourceName string) ([]bridge.Deployment, error) {
-	return a.service.Deployments(a.ctx, subscriptionID, resourceGroup, resourceName)
+func (a *App) Deployments(tenantID, subscriptionID, resourceGroup, resourceName string) ([]bridge.Deployment, error) {
+	return a.service.Deployments(a.ctx, tenantID, subscriptionID, resourceGroup, resourceName)
 }
 
-func (a *App) Models(subscriptionID, resourceGroup, resourceName string) ([]bridge.DeployableModel, error) {
-	return a.service.Models(a.ctx, subscriptionID, resourceGroup, resourceName)
+func (a *App) Models(tenantID, subscriptionID, resourceGroup, resourceName string) ([]bridge.DeployableModel, error) {
+	return a.service.Models(a.ctx, tenantID, subscriptionID, resourceGroup, resourceName)
 }
 
 func (a *App) PrepareOpenCodex() (bridge.OpenCodexState, error) {

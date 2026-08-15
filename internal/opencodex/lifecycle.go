@@ -61,13 +61,37 @@ func (m *Manager) state(ctx context.Context) (State, error) {
 	return result, nil
 }
 
-func (m *Manager) InstallService(ctx context.Context) error {
-	result, err := m.runner.Run(ctx, "", "service", "install")
+func (m *Manager) EnsureService(ctx context.Context) error {
+	result, err := m.runner.Run(ctx, "", "status", "--json")
 	if err != nil {
 		return err
 	}
 	if result.Code != 0 {
-		return commandFailure("ocx service install", result)
+		return commandFailure("ocx status", result)
+	}
+	var status struct {
+		Startup struct {
+			ServiceInstalled bool `json:"serviceInstalled"`
+			ServiceViable    bool `json:"serviceViable"`
+			ServiceConflict  bool `json:"serviceConflict"`
+		} `json:"startup"`
+	}
+	if err := json.Unmarshal([]byte(result.Stdout), &status); err != nil {
+		return errors.New("ocx status returned invalid JSON")
+	}
+	if status.Startup.ServiceViable {
+		return nil
+	}
+	command := "install"
+	if status.Startup.ServiceInstalled && !status.Startup.ServiceConflict {
+		command = "repair"
+	}
+	result, err = m.runner.Run(ctx, "", "service", command)
+	if err != nil {
+		return err
+	}
+	if result.Code != 0 {
+		return commandFailure("ocx service "+command, result)
 	}
 	return nil
 }
@@ -108,6 +132,13 @@ func (m *Manager) EnsureProvider(ctx context.Context, providerID, baseURL, model
 	if result.Code != 0 {
 		return commandFailure("ocx provider add", result)
 	}
+	result, err = m.runner.Run(ctx, "", "provider", "edit", providerID, "--live-models", "off", "--json")
+	if err != nil {
+		return err
+	}
+	if result.Code != 0 {
+		return commandFailure("ocx provider edit", result)
+	}
 	return nil
 }
 
@@ -117,7 +148,7 @@ func (m *Manager) AddPrimaryKey(ctx context.Context, providerID, primaryKey stri
 	}
 	result, err := m.runner.Run(ctx, primaryKey+"\n", "account", "add-key", providerID, "--label", "primary", "--json")
 	if err != nil {
-		return err
+		return redactError(err, primaryKey, "")
 	}
 	if result.Code != 0 {
 		return commandFailureWithSecret("ocx account add-key", result, primaryKey)
@@ -253,9 +284,7 @@ func commandFailureWithSecret(command string, result CommandResult, secret strin
 	if detail == "" {
 		detail = "command failed"
 	}
-	if secret != "" {
-		detail = strings.ReplaceAll(detail, secret, "[REDACTED]")
-	}
+	detail = redactSecret(detail, secret)
 	return fmt.Errorf("%s: %s", command, detail)
 }
 
