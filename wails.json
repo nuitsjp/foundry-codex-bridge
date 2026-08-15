@@ -4,7 +4,8 @@
   "outputfilename": "foundry-codex-bridge",
   "frontend:install": "npm install",
   "frontend:build": "npm run build",
-  "frontend:dev": "npm run dev",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
   "author": {
     "name": "nuitsjp"
   },
@@ -16,7 +17,6 @@
     "comments": "Manage Azure Model Deployments through opencodex"
   },
   "assetdir": "frontend/dist",
-  "devserver": "localhost:5173",
   "windows": {
     "webviewIsTransparent": false,
     "windowIsTranslucent": false,
