@@ -41,6 +41,7 @@ export type ModelSKU = {
   usageName: string;
   capacity: CapacityConstraints;
   unit: string;
+  tpmPerCapacityUnit: number;
 };
 export type DeployableModel = {
   name: string;

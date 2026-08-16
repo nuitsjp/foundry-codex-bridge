@@ -58,10 +58,11 @@ type CapacityConstraints struct {
 }
 
 type ModelSKU struct {
-	Name      string              `json:"name"`
-	UsageName string              `json:"usageName"`
-	Capacity  CapacityConstraints `json:"capacity"`
-	Unit      string              `json:"unit"`
+	Name               string              `json:"name"`
+	UsageName          string              `json:"usageName"`
+	Capacity           CapacityConstraints `json:"capacity"`
+	Unit               string              `json:"unit"`
+	TPMPerCapacityUnit int32               `json:"tpmPerCapacityUnit"`
 }
 
 type DeployableModel struct {

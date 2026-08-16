@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"sort"
 	"strings"
 
@@ -423,10 +424,14 @@ func accountModelToDTO(item *armcognitiveservices.AccountModel) DeployableModel 
 }
 
 func modelSKUToDTO(item *armcognitiveservices.ModelSKU) ModelSKU {
+	name := stringValue(item.Name)
+	usageName := stringValue(item.UsageName)
+	unit := capacityUnit(name, usageName)
 	result := ModelSKU{
-		Name:      stringValue(item.Name),
-		UsageName: stringValue(item.UsageName),
-		Unit:      capacityUnit(stringValue(item.Name), stringValue(item.UsageName)),
+		Name:               name,
+		UsageName:          usageName,
+		Unit:               unit,
+		TPMPerCapacityUnit: tpmPerCapacityUnit(unit, item.RateLimits),
 	}
 	if item.Capacity != nil {
 		result.Capacity = CapacityConstraints{
@@ -481,6 +486,35 @@ func capacityUnit(name, usageName string) string {
 		return "PTU"
 	}
 	return "TPM"
+}
+
+func tpmPerCapacityUnit(unit string, rateLimits []*armcognitiveservices.CallRateLimit) int32 {
+	if strings.EqualFold(unit, "PTU") {
+		return 1
+	}
+
+	const maxInt32 = int64(1<<31 - 1)
+	var result int32
+	for _, rateLimit := range rateLimits {
+		if rateLimit == nil || rateLimit.Count == nil || rateLimit.RenewalPeriod == nil {
+			continue
+		}
+		count := float64(*rateLimit.Count)
+		renewalPeriod := float64(*rateLimit.RenewalPeriod)
+		if count <= 0 || renewalPeriod <= 0 {
+			continue
+		}
+		perMinute := count * 60 / renewalPeriod
+		rounded := math.Round(perMinute)
+		if math.IsNaN(perMinute) || math.IsInf(perMinute, 0) || math.Abs(perMinute-rounded) > 0.0001 || rounded > float64(maxInt32) {
+			continue
+		}
+		candidate := int32(rounded)
+		if candidate > result {
+			result = candidate
+		}
+	}
+	return result
 }
 
 func stringValue(value *string) string {

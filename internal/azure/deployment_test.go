@@ -66,7 +66,7 @@ func TestModelsMapsAccountModelCapabilitiesAndCapacity(t *testing.T) {
       "capabilities": {"responses": "true", "agentsV2": "false"},
       "maxCapacity": 42,
       "skus": [
-        {"name": "Standard", "usageName": "OpenAI.Standard", "capacity": {"minimum": 1, "maximum": 100, "step": 1, "default": 10, "allowedValues": [1, 10, 100]}},
+        {"name": "Standard", "usageName": "OpenAI.Standard", "rateLimits": [{"count": 1, "renewalPeriod": 60}, {"count": 1000, "renewalPeriod": 60}], "capacity": {"minimum": 1, "maximum": 100, "step": 1, "default": 10, "allowedValues": [1, 10, 100]}},
         {"name": "ProvisionedManaged", "usageName": "OpenAI.ProvisionedManaged", "capacity": {"minimum": 1, "maximum": 42, "step": 1, "default": 4}}
       ]
     },
@@ -95,10 +95,10 @@ func TestModelsMapsAccountModelCapabilitiesAndCapacity(t *testing.T) {
 		t.Fatalf("SKUs = %#v", got.SKUs)
 	}
 	capacity := got.SKUs[0].Capacity
-	if got.SKUs[0].Unit != "TPM" || capacity.Minimum != 1 || capacity.Maximum != 100 || capacity.Step != 1 || capacity.Default != 10 || !slices.Equal(capacity.AllowedValues, []int32{1, 10, 100}) {
+	if got.SKUs[0].Unit != "TPM" || got.SKUs[0].TPMPerCapacityUnit != 1000 || capacity.Minimum != 1 || capacity.Maximum != 100 || capacity.Step != 1 || capacity.Default != 10 || !slices.Equal(capacity.AllowedValues, []int32{1, 10, 100}) {
 		t.Fatalf("standard SKU = %#v", got.SKUs[0])
 	}
-	if got.SKUs[1].Unit != "PTU" || got.SKUs[1].Capacity.Maximum != 42 {
+	if got.SKUs[1].Unit != "PTU" || got.SKUs[1].TPMPerCapacityUnit != 1 || got.SKUs[1].Capacity.Maximum != 42 {
 		t.Fatalf("provisioned SKU = %#v", got.SKUs[1])
 	}
 	if !models[1].CodexCandidate || models[2].CodexCandidate {

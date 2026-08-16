@@ -19,6 +19,7 @@ import {
   type SyncResult,
   type SyncStage,
   type Tenant,
+  type ModelSKU,
 } from "./api";
 import ActivityStatus from "./ActivityStatus";
 
@@ -65,8 +66,54 @@ function validCapacity(value: number, constraints: CapacityConstraints | undefin
   return true;
 }
 
+function capacityMultiplier(sku: ModelSKU | undefined): number {
+  if (!sku) return 0;
+  if (sku.unit.toUpperCase().includes("PTU")) return 1;
+  return Number.isSafeInteger(sku.tpmPerCapacityUnit) && sku.tpmPerCapacityUnit > 0 ? sku.tpmPerCapacityUnit : 0;
+}
+
+function scaleCapacity(value: number, multiplier: number): number | undefined {
+  const scaled = value * multiplier;
+  return Number.isSafeInteger(scaled) ? scaled : undefined;
+}
+
+function displayCapacityConstraints(sku: ModelSKU | undefined): CapacityConstraints | undefined {
+  if (!sku) return undefined;
+  const multiplier = capacityMultiplier(sku);
+  if (multiplier <= 0) return undefined;
+  const values = [sku.capacity.minimum, sku.capacity.maximum, sku.capacity.step, sku.capacity.default, ...sku.capacity.allowedValues];
+  const scaled = values.map((value) => scaleCapacity(value, multiplier));
+  if (scaled.some((value) => value === undefined)) return undefined;
+  return {
+    minimum: scaled[0] ?? 0,
+    maximum: scaled[1] ?? 0,
+    step: scaled[2] ?? 0,
+    default: scaled[3] ?? 0,
+    allowedValues: scaled.slice(4) as number[],
+  };
+}
+
+function displayCapacityValue(value: number, sku: ModelSKU | undefined): string {
+  const multiplier = capacityMultiplier(sku);
+  const displayed = multiplier > 0 ? scaleCapacity(value, multiplier) : undefined;
+  return displayed === undefined ? "" : String(displayed);
+}
+
+function apiCapacityValue(value: number, sku: ModelSKU | undefined): number | undefined {
+  const multiplier = capacityMultiplier(sku);
+  if (multiplier <= 0 || !Number.isInteger(value) || value < 0 || value % multiplier !== 0) return undefined;
+  const apiValue = value / multiplier;
+  return Number.isSafeInteger(apiValue) ? apiValue : undefined;
+}
+
 function capacityUnitLabel(unit: string): string {
-  return unit.toUpperCase().includes("PTU") ? "PTU" : "TPM換算単位（モデル固有）";
+  return unit.toUpperCase().includes("PTU") ? "PTU" : "TPM";
+}
+
+function formatCapacityComparison(value: number | string, sku: ModelSKU | undefined): string {
+  const unit = sku ? capacityUnitLabel(sku.unit) : "不明";
+  const displayed = typeof value === "number" ? displayCapacityValue(value, sku) : value;
+  return `${displayed || (typeof value === "number" ? "換算不可" : "未指定")} ${unit}`;
 }
 
 function formatPolicy(value: string | undefined): string {
@@ -154,14 +201,17 @@ export default function App() {
   const candidateModels = models.filter((model) => model.codexCandidate);
   const selectedDeployment = useMemo(() => deployments.find((item) => item.name === editDeploymentName), [deployments, editDeploymentName]);
   const selectedDeploymentModel = useMemo(() => models.find((item) => item.name === deploymentModelName && item.version === deploymentModelVersion) ?? models.find((item) => item.name === deploymentModelName), [models, deploymentModelName, deploymentModelVersion]);
+  const existingDeploymentModel = useMemo(() => selectedDeployment ? models.find((item) => item.name === selectedDeployment.modelName && item.version === selectedDeployment.modelVersion) ?? models.find((item) => item.name === selectedDeployment.modelName) : undefined, [models, selectedDeployment]);
+  const existingDeploymentSKU = existingDeploymentModel?.skus.find((item) => item.name === selectedDeployment?.sku);
   const deploymentSKUs = selectedDeploymentModel?.skus ?? [];
   const selectedDeploymentSKU = deploymentSKUs.find((item) => item.name === deploymentSKU);
-  const capacityConstraints = selectedDeploymentSKU?.capacity;
+  const capacityConstraints = displayCapacityConstraints(selectedDeploymentSKU);
   const portNumber = Number(port);
   const validPort = Number.isInteger(portNumber) && portNumber >= 1 && portNumber <= 65535;
   const capacityNumber = Number(deploymentCapacity);
   const validDeploymentCapacity = validCapacity(capacityNumber, capacityConstraints);
-  const canApplyDeployment = auth.signedIn && Boolean(resourceName) && Boolean(editDeploymentName || deploymentNameInput) && Boolean(deploymentModelName) && Boolean(deploymentModelVersion) && Boolean(deploymentSKU) && Number.isInteger(capacityNumber) && validDeploymentCapacity && confirmDeployment && !busy;
+  const apiCapacityNumber = apiCapacityValue(capacityNumber, selectedDeploymentSKU);
+  const canApplyDeployment = auth.signedIn && Boolean(resourceName) && Boolean(editDeploymentName || deploymentNameInput) && Boolean(deploymentModelName) && Boolean(deploymentModelVersion) && Boolean(deploymentSKU) && apiCapacityNumber !== undefined && validDeploymentCapacity && confirmDeployment && !busy;
   const canPreview = auth.signedIn && Boolean(resourceName) && deploymentNames.length > 0 && Boolean(defaultDeploymentName) && openCodex.installed && !busy;
   const canSync = canPreview && Boolean(confirmCosts) && Boolean(syncPreview?.ok) && syncPreviewKey === currentSyncKey;
   const disconnectManaged = disconnectPreview?.managed ?? disconnectTarget;
@@ -227,7 +277,7 @@ export default function App() {
     setDeploymentModelName(deployment.modelName);
     setDeploymentModelVersion(deployment.modelVersion || model?.version || "");
     setDeploymentSKU(sku?.name ?? deployment.sku);
-    setDeploymentCapacity(String(deployment.capacity || sku?.capacity.default || sku?.capacity.minimum || ""));
+    setDeploymentCapacity(displayCapacityValue(deployment.capacity, sku) || displayCapacityValue(sku?.capacity.default || sku?.capacity.minimum || 0, sku));
     setDeploymentVersionUpgradeOption(deployment.versionUpgradeOption || "");
   }
 
@@ -237,7 +287,7 @@ export default function App() {
     setDeploymentModelName(name);
     setDeploymentModelVersion(model?.version ?? "");
     setDeploymentSKU(sku?.name ?? "");
-    setDeploymentCapacity(String(sku?.capacity.default || sku?.capacity.minimum || ""));
+    setDeploymentCapacity(displayCapacityValue(sku?.capacity.default || sku?.capacity.minimum || 0, sku));
     setConfirmDeployment(false);
     setDeploymentOperation(null);
   }
@@ -248,7 +298,7 @@ export default function App() {
     const sku = skus.find((item) => item.name === deploymentSKU) ?? skus[0];
     setDeploymentModelVersion(version);
     setDeploymentSKU(sku?.name ?? "");
-    setDeploymentCapacity(String(sku?.capacity.default || sku?.capacity.minimum || ""));
+    setDeploymentCapacity(displayCapacityValue(sku?.capacity.default || sku?.capacity.minimum || 0, sku));
     setConfirmDeployment(false);
     setDeploymentOperation(null);
   }
@@ -256,7 +306,7 @@ export default function App() {
   function selectDeploymentSKU(name: string) {
     const sku = deploymentSKUs.find((item) => item.name === name);
     setDeploymentSKU(name);
-    setDeploymentCapacity(String(sku?.capacity.default || sku?.capacity.minimum || ""));
+    setDeploymentCapacity(displayCapacityValue(sku?.capacity.default || sku?.capacity.minimum || 0, sku));
     setConfirmDeployment(false);
     setDeploymentOperation(null);
   }
@@ -353,7 +403,7 @@ export default function App() {
       modelFormat: selectedDeploymentModel?.format ?? selectedDeployment?.modelFormat ?? "",
       modelVersion: deploymentModelVersion,
       sku: deploymentSKU,
-      capacity: capacityNumber,
+      capacity: apiCapacityNumber ?? 0,
       confirm: confirmDeployment,
     };
     if (deploymentVersionUpgradeOption) request.versionUpgradeOption = deploymentVersionUpgradeOption;
@@ -438,10 +488,10 @@ export default function App() {
         <option value="">選択してください</option>{deploymentSKUs.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}
       </select></label>
     </div>
-    {selectedDeploymentSKU && <div className="capacity-help"><b>Capacity単位: {capacityUnitLabel(selectedDeploymentSKU.unit)}</b><span>最小 {selectedDeploymentSKU.capacity.minimum} / 最大 {selectedDeploymentSKU.capacity.maximum || "制限なし"} / 刻み {selectedDeploymentSKU.capacity.step || "指定なし"} / 既定 {selectedDeploymentSKU.capacity.default}</span><span>許容値: {selectedDeploymentSKU.capacity.allowedValues.length > 0 ? selectedDeploymentSKU.capacity.allowedValues.join(", ") : "範囲と刻みに従う"}</span><small>available capacity は作成成功を保証しません。</small></div>}
-    <label>Capacity{selectedDeploymentSKU?.capacity.allowedValues.length ? <select value={deploymentCapacity} onChange={(event) => { setDeploymentCapacity(event.target.value); setConfirmDeployment(false); setDeploymentOperation(null); }} disabled={!selectedDeploymentSKU}><option value="">選択してください</option>{selectedDeploymentSKU.capacity.allowedValues.map((value) => <option key={value} value={value}>{value}</option>)}</select> : <input type="number" value={deploymentCapacity} min={capacityConstraints?.minimum} max={capacityConstraints?.maximum || undefined} step={capacityConstraints?.step || 1} onChange={(event) => { setDeploymentCapacity(event.target.value); setConfirmDeployment(false); setDeploymentOperation(null); }} disabled={!selectedDeploymentSKU} />}</label>
+    {selectedDeploymentSKU && <div className="capacity-help"><b>Capacity単位: {capacityUnitLabel(selectedDeploymentSKU.unit)}</b>{capacityConstraints ? <><span>最小 {capacityConstraints.minimum} / 最大 {capacityConstraints.maximum || "制限なし"} / 刻み {capacityConstraints.step || "指定なし"} / 既定 {capacityConstraints.default}</span><span>許容値: {capacityConstraints.allowedValues.length > 0 ? capacityConstraints.allowedValues.join(", ") : "範囲と刻みに従う"}</span></> : <span>このStandard SKUのTPM換算値を取得できないため、作成・更新できません。</span>}<small>available capacity は作成成功を保証しません。</small></div>}
+    <label>Capacity{selectedDeploymentSKU ? ` (${capacityUnitLabel(selectedDeploymentSKU.unit)})` : ""}{capacityConstraints?.allowedValues.length ? <select value={deploymentCapacity} onChange={(event) => { setDeploymentCapacity(event.target.value); setConfirmDeployment(false); setDeploymentOperation(null); }} disabled={!selectedDeploymentSKU}><option value="">選択してください</option>{capacityConstraints.allowedValues.map((value) => <option key={value} value={value}>{value}</option>)}</select> : <input type="number" value={deploymentCapacity} min={capacityConstraints?.minimum} max={capacityConstraints?.maximum || undefined} step={capacityConstraints?.step || 1} onChange={(event) => { setDeploymentCapacity(event.target.value); setConfirmDeployment(false); setDeploymentOperation(null); }} disabled={!selectedDeploymentSKU || !capacityConstraints} />}</label>
     <label>Version upgrade policy<select value={deploymentVersionUpgradeOption} onChange={(event) => { setDeploymentVersionUpgradeOption(event.target.value); setConfirmDeployment(false); setDeploymentOperation(null); }}><option value="">未選択（Azure既定）</option><option value="OnceNewDefaultVersionAvailable">OnceNewDefaultVersionAvailable</option><option value="OnceCurrentVersionExpired">OnceCurrentVersionExpired</option><option value="NoAutoUpgrade">NoAutoUpgrade</option></select></label>
-    {selectedDeployment && <div className="deployment-compare"><h3>更新前後の比較</h3><div className="summary"><span>Model/version</span><b>{selectedDeployment.modelName} / {selectedDeployment.modelVersion || "未指定"}</b><b>{deploymentModelName || "未指定"} / {deploymentModelVersion || "未指定"}</b><span>SKU</span><b>{selectedDeployment.sku || "未指定"}</b><b>{deploymentSKU || "未指定"}</b><span>Capacity</span><b>{selectedDeployment.capacity}</b><b>{deploymentCapacity || "未指定"}</b><span>Version policy</span><b>{formatPolicy(selectedDeployment.versionUpgradeOption)}</b><b>{formatPolicy(deploymentVersionUpgradeOption)}</b></div></div>}
+    {selectedDeployment && <div className="deployment-compare"><h3>更新前後の比較</h3><div className="summary"><span>Model/version</span><b>{selectedDeployment.modelName} / {selectedDeployment.modelVersion || "未指定"}</b><b>{deploymentModelName || "未指定"} / {deploymentModelVersion || "未指定"}</b><span>SKU</span><b>{selectedDeployment.sku || "未指定"}</b><b>{deploymentSKU || "未指定"}</b><span>Capacity</span><b>{formatCapacityComparison(selectedDeployment.capacity, existingDeploymentSKU)}</b><b>{formatCapacityComparison(deploymentCapacity, selectedDeploymentSKU)}</b><span>Version policy</span><b>{formatPolicy(selectedDeployment.versionUpgradeOption)}</b><b>{formatPolicy(deploymentVersionUpgradeOption)}</b></div></div>}
     <p className="hint">能力値によるCodex候補判定は実リクエストの成功を保証しません。作成・更新後にCodexへ反映するには明示Syncが必要です。</p>
     <label className="check"><input type="checkbox" checked={confirmDeployment} onChange={(event) => setConfirmDeployment(event.target.checked)} /> 表示されたDeploymentの現在値と変更後を確認し、Azureで作成・更新することを明示確認しました。</label>
     <button className="primary" disabled={!canApplyDeployment} onClick={() => void applyDeployment()}>{editDeploymentName ? "Deploymentを更新" : "Deploymentを作成"}</button>

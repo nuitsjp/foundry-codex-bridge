@@ -91,8 +91,9 @@ function installDeploymentApp(savedSelection: Partial<Snapshot["selection"]> = {
   app.ModelResources.mockResolvedValue([{ id: "resource-1", name: "model-resource", kind: "OpenAI", location: "japaneast", endpoint: "https://example.openai.azure.com", disableLocalAuth: false }]);
   app.Deployments.mockResolvedValue(deploymentList);
   app.Models.mockResolvedValue([
-    { name: "gpt-4o", format: "OpenAI", version: "2024-08-06", capabilities: { responses: "true" }, codexCandidate: true, maxCapacity: 100, skus: [{ name: "Standard", usageName: "OpenAI.Standard", unit: "TPM", capacity: { minimum: 1, maximum: 100, step: 1, default: 10, allowedValues: [1, 10, 100] } }] },
-    { name: "gpt-4.1", format: "OpenAI", version: "2025-04-14", capabilities: { responses: "true" }, codexCandidate: true, maxCapacity: 100, skus: [{ name: "Standard", usageName: "OpenAI.Standard", unit: "TPM", capacity: { minimum: 1, maximum: 100, step: 1, default: 10, allowedValues: [1, 10, 100] } }] },
+    { name: "gpt-4o", format: "OpenAI", version: "2024-08-06", capabilities: { responses: "true" }, codexCandidate: true, maxCapacity: 150, skus: [{ name: "Standard", usageName: "OpenAI.Standard", unit: "TPM", tpmPerCapacityUnit: 1000, capacity: { minimum: 1, maximum: 150, step: 1, default: 10, allowedValues: [1, 10, 100, 150] } }] },
+    { name: "gpt-4.1", format: "OpenAI", version: "2025-04-14", capabilities: { responses: "true" }, codexCandidate: true, maxCapacity: 150, skus: [{ name: "Standard", usageName: "OpenAI.Standard", unit: "TPM", tpmPerCapacityUnit: 1000, capacity: { minimum: 1, maximum: 150, step: 1, default: 10, allowedValues: [] } }] },
+    { name: "gpt-4o-ptu", format: "OpenAI", version: "2024-08-06", capabilities: { responses: "true" }, codexCandidate: true, maxCapacity: 42, skus: [{ name: "ProvisionedManaged", usageName: "OpenAI.ProvisionedManaged", unit: "PTU", tpmPerCapacityUnit: 1, capacity: { minimum: 1, maximum: 42, step: 1, default: 4, allowedValues: [] } }] },
   ]);
   return app;
 }
@@ -349,7 +350,8 @@ describe("App multi-deployment selection", () => {
     fireEvent.change(screen.getByRole("combobox", { name: "Model" }), { target: { value: "gpt-4o" } });
     fireEvent.change(screen.getByRole("combobox", { name: "Model version" }), { target: { value: "2024-08-06" } });
     fireEvent.change(screen.getByRole("combobox", { name: "SKU" }), { target: { value: "Standard" } });
-    fireEvent.change(screen.getByRole("combobox", { name: "Capacity" }), { target: { value: "10" } });
+    expect(screen.getByText(/最小 1000 \/ 最大 150000 \/ 刻み 1000 \/ 既定 10000/)).toBeInTheDocument();
+    fireEvent.change(screen.getByRole("combobox", { name: "Capacity (TPM)" }), { target: { value: "150000" } });
 
     const createButton = screen.getByRole("button", { name: "Deploymentを作成" });
     expect(createButton).toBeDisabled();
@@ -363,12 +365,56 @@ describe("App multi-deployment selection", () => {
       modelFormat: "OpenAI",
       modelVersion: "2024-08-06",
       sku: "Standard",
-      capacity: 10,
+      capacity: 150,
       confirm: true,
     })));
     expect(app.CreateDeployment.mock.calls[0][0]).not.toHaveProperty("versionUpgradeOption");
     expect(await screen.findByRole("status", { name: "Sync required" })).toHaveTextContent("明示Syncが必要");
     expect(app.Sync).not.toHaveBeenCalled();
+  });
+
+  it("keeps Provisioned capacity in PTU without TPM conversion", async () => {
+    const app = await openDeployments();
+    app.CreateDeployment.mockResolvedValue({
+      ok: true,
+      operation: "create",
+      status: "succeeded",
+      deployment: { ...deploymentList[0], name: "ptu-deployment", sku: "ProvisionedManaged", capacity: 8 },
+      message: "Azure deployment operation completed",
+      syncRequired: true,
+    });
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Deployment name" }), { target: { value: "ptu-deployment" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Model" }), { target: { value: "gpt-4o-ptu" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Model version" }), { target: { value: "2024-08-06" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "SKU" }), { target: { value: "ProvisionedManaged" } });
+    expect(screen.getByText(/Capacity単位: PTU/)).toBeInTheDocument();
+    const capacity = screen.getByRole("spinbutton", { name: "Capacity (PTU)" });
+    expect(capacity).toHaveValue(4);
+    fireEvent.change(capacity, { target: { value: "8" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: /Azureで作成・更新/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Deploymentを作成" }));
+
+    await waitFor(() => expect(app.CreateDeployment).toHaveBeenCalledWith(expect.objectContaining({
+      sku: "ProvisionedManaged",
+      capacity: 8,
+      confirm: true,
+    })));
+  });
+
+  it("does not submit a Standard capacity that is not divisible by its TPM multiplier", async () => {
+    const app = await openDeployments();
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Deployment name" }), { target: { value: "invalid-capacity" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Model" }), { target: { value: "gpt-4.1" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Model version" }), { target: { value: "2025-04-14" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "SKU" }), { target: { value: "Standard" } });
+    const capacity = screen.getByRole("spinbutton", { name: "Capacity (TPM)" });
+    fireEvent.change(capacity, { target: { value: "10001" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: /Azureで作成・更新/ }));
+
+    expect(screen.getByRole("button", { name: "Deploymentを作成" })).toBeDisabled();
+    expect(app.CreateDeployment).not.toHaveBeenCalled();
   });
 
   it("shows the current and changed values before updating a deployment", async () => {
@@ -386,7 +432,8 @@ describe("App multi-deployment selection", () => {
     const comparison = screen.getByRole("heading", { name: "更新前後の比較" }).parentElement as HTMLElement;
     expect(comparison).toBeInTheDocument();
     expect(within(comparison).getAllByText("NoAutoUpgrade")).toHaveLength(2);
-    fireEvent.change(screen.getByRole("combobox", { name: "Capacity" }), { target: { value: "100" } });
+    expect(within(comparison).getAllByText("10000 TPM")).toHaveLength(2);
+    fireEvent.change(screen.getByRole("combobox", { name: "Capacity (TPM)" }), { target: { value: "100000" } });
     fireEvent.click(screen.getByRole("checkbox", { name: /Azureで作成・更新/ }));
     fireEvent.click(screen.getByRole("button", { name: "Deploymentを更新" }));
 
@@ -396,5 +443,19 @@ describe("App multi-deployment selection", () => {
       versionUpgradeOption: "NoAutoUpgrade",
       confirm: true,
     })));
+  });
+
+  it("shows the existing and changed capacities with their own units when SKU changes", async () => {
+    const app = await openDeployments();
+    fireEvent.change(screen.getByRole("combobox", { name: "編集対象Deployment" }), { target: { value: "deployment-a" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Model" }), { target: { value: "gpt-4o-ptu" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Model version" }), { target: { value: "2024-08-06" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "SKU" }), { target: { value: "ProvisionedManaged" } });
+
+    const comparison = screen.getByRole("heading", { name: "更新前後の比較" }).parentElement as HTMLElement;
+    expect(within(comparison).getByText("10000 TPM")).toBeInTheDocument();
+    expect(within(comparison).getByText("4 PTU")).toBeInTheDocument();
+    expect(within(comparison).getByText("Capacity")).toBeInTheDocument();
+    expect(app.UpdateDeployment).not.toHaveBeenCalled();
   });
 });
