@@ -6,38 +6,39 @@ Microsoft Foundry / Azure OpenAI の deployment を opencodex 経由で Codex �
 
 Issue #2 の第1段階を実装済み。Wails v2 のデスクトップ画面から Azure の既存 Model Resource と Model Deployment を選択し、明示的な Sync 操作で opencodex の Provider、PrimaryKey、モデル、Codex カタログを順番に反映できる。
 
-Azure には `InteractiveBrowserCredential` でサインインし、認証レコードとトークンキャッシュはユーザー領域に保存する。Bridge の設定ファイルには secret を保存しない。Node.js と npm は事前に導入しておく必要があり、Bridge は自動導入しない。
+Azure認証にはAzure CLIのログイン済み資格情報を使用する。Bridge独自のEntraアプリを利用者Tenantへ追加せず、Client IDやclient secretを要求しない。Bridgeの設定ファイルにはsecretを保存しない。Azure CLI、Node.js、npmは事前に導入しておく必要があり、Bridgeは自動導入しない。
 
-実際の Azure 接続と Responses 接続テストには、プロジェクト所有の Entra パブリッククライアント ID、Azure のアクセス権、既存の Azure Model Resource と Model Deployment が必要である。リリースビルドには client ID を埋め込み、開発時だけ環境変数で上書きする。
+実際のAzure接続とResponses接続テストには、Azure CLI、Azureのアクセス権、既存のAzure Model ResourceとModel Deploymentが必要である。Connect画面から`az login`を開始でき、既存のAzure CLIログインも再利用する。
 
 ## 開発要件
 
 - Windows
-- Go 1.25 以上
+- Azure CLI
 - Node.js 18 以上と npm
-- Wails v2 CLI
+- mise
 
-開発時はプロジェクト所有のパブリッククライアント ID を設定する。リリースビルドでは `main.embeddedAzureClientID` へ値を埋め込む。
+Azure CLI、Node.js、npm、miseは`PATH`から実行できる必要がある。GoとWailsはmiseで導入・固定する。Node.jsとAzure CLIは自動導入しない。
+
+最初に開発環境を初期化し、診断を通す。
 
 ```powershell
-$env:FOUNDRYCODEX_AZURE_CLIENT_ID = "<public-client-id>"
+mise trust
+mise run init
+mise run doctor
 ```
 
-Node.js が利用できる状態で、次を実行する。
+`mise run doctor`はプロジェクトの開発環境診断である。mise本体の診断は`mise doctor`で実行する。`init`がmise shimsをユーザー`PATH`とPowerShell profileへ登録した後、新しいPowerShell sessionで`mise doctor`を実行する。
+
+開発モードでアプリを起動する。
 
 ```powershell
-go test ./...
-Push-Location frontend
-npm ci
-npm run build
-Pop-Location
-wails build
+mise run dev
 ```
 
-リリース用に client ID を埋め込む場合は、Wails の linker flag を指定する。
+テストとproduction buildをまとめて実行する。
 
 ```powershell
-wails build -ldflags "-X main.embeddedAzureClientID=<public-client-id>"
+mise run build
 ```
 
 `ocx` が PATH にない場合、GUI の「利用者の承認でopencodexを導入」から npm を使って `%LOCALAPPDATA%\FoundryCodexBridge\opencodex` に導入する。グローバル npm 環境と PATH は変更しない。
@@ -49,11 +50,13 @@ wails build -ldflags "-X main.embeddedAzureClientID=<public-client-id>"
 - local authentication が無効なリソースは、API key を使う現行 opencodex アダプターの制約により Sync 対象外とする。
 - 起動時は読み取り専用で、Provider、Catalog、service、接続テストを自動変更しない。
 - Sync の接続テストは実際の Azure リクエストになるため、画面上の確認が必要である。
+- 初回のservice登録または修復ではWindowsのUAC確認が表示される。Bridgeは公開`ocx service`を昇格起動し、Task Schedulerの管理はopencodexに委ねる。
 
 ## 設計ドキュメント
 
 - [アーキテクチャ](./docs/architecture.md)
 - [リポジトリ構成](./docs/repository-structure.md)
 - [開発手順](./docs/development.md)
+- [第1段階 実機検証記録](./docs/phase-1-validation.md)
 - [用語集](./CONTEXT.md)
 - [ADR](./docs/adr/)

@@ -1,7 +1,10 @@
 export type AuthState = {
+  cliInstalled: boolean;
+  cliVersion: string;
   signedIn: boolean;
   username: string;
   tenantId: string;
+  message: string;
 };
 
 export type Tenant = { id: string; displayName: string };
@@ -65,7 +68,6 @@ export type SyncResult = { ok: boolean; providerId: string; deployment: string; 
 type BoundApp = {
   Snapshot(): Promise<Snapshot>;
   SignIn(): Promise<AuthState>;
-  SignOut(): Promise<void>;
   Tenants(): Promise<Tenant[]>;
   Subscriptions(tenantId: string): Promise<Subscription[]>;
   ResourceGroups(tenantId: string, subscriptionId: string): Promise<ResourceGroup[]>;
@@ -99,16 +101,19 @@ function boundApp(): BoundApp {
   return app;
 }
 
+export function normalizeList<T>(value: T[] | null | undefined): T[] {
+  return value ?? [];
+}
+
 export const api = {
   snapshot: () => boundApp().Snapshot(),
   signIn: () => boundApp().SignIn(),
-  signOut: () => boundApp().SignOut(),
-  tenants: () => boundApp().Tenants(),
-  subscriptions: (tenantId: string) => boundApp().Subscriptions(tenantId),
-  resourceGroups: (tenantId: string, subscriptionId: string) => boundApp().ResourceGroups(tenantId, subscriptionId),
-  resources: (tenantId: string, subscriptionId: string, resourceGroup: string) => boundApp().ModelResources(tenantId, subscriptionId, resourceGroup),
-  deployments: (tenantId: string, subscriptionId: string, resourceGroup: string, resourceName: string) => boundApp().Deployments(tenantId, subscriptionId, resourceGroup, resourceName),
-  models: (tenantId: string, subscriptionId: string, resourceGroup: string, resourceName: string) => boundApp().Models(tenantId, subscriptionId, resourceGroup, resourceName),
+  tenants: () => boundApp().Tenants().then(normalizeList),
+  subscriptions: (tenantId: string) => boundApp().Subscriptions(tenantId).then(normalizeList),
+  resourceGroups: (tenantId: string, subscriptionId: string) => boundApp().ResourceGroups(tenantId, subscriptionId).then(normalizeList),
+  resources: (tenantId: string, subscriptionId: string, resourceGroup: string) => boundApp().ModelResources(tenantId, subscriptionId, resourceGroup).then(normalizeList),
+  deployments: (tenantId: string, subscriptionId: string, resourceGroup: string, resourceName: string) => boundApp().Deployments(tenantId, subscriptionId, resourceGroup, resourceName).then(normalizeList),
+  models: (tenantId: string, subscriptionId: string, resourceGroup: string, resourceName: string) => boundApp().Models(tenantId, subscriptionId, resourceGroup, resourceName).then(normalizeList),
   prepareOpenCodex: () => boundApp().PrepareOpenCodex(),
   openCodexState: () => boundApp().OpenCodexState(),
   sync: (request: Parameters<BoundApp["Sync"]>[0]) => boundApp().Sync(request),

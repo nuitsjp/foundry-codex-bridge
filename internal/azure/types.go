@@ -3,9 +3,12 @@ package azure
 import "context"
 
 type AuthState struct {
-	SignedIn bool   `json:"signedIn"`
-	Username string `json:"username"`
-	TenantID string `json:"tenantId"`
+	CLIInstalled bool   `json:"cliInstalled"`
+	CLIVersion   string `json:"cliVersion"`
+	SignedIn     bool   `json:"signedIn"`
+	Username     string `json:"username"`
+	TenantID     string `json:"tenantId"`
+	Message      string `json:"message"`
 }
 
 type Tenant struct {
@@ -61,8 +64,7 @@ type KeyBundle struct {
 
 type Client interface {
 	Authenticate(context.Context) (AuthState, error)
-	SignOut(context.Context) error
-	AuthState() AuthState
+	AuthState(context.Context) AuthState
 	Tenants(context.Context) ([]Tenant, error)
 	Subscriptions(context.Context, string) ([]Subscription, error)
 	ResourceGroups(context.Context, string, string) ([]ResourceGroup, error)

@@ -8,6 +8,10 @@ FoundryCodex Bridge は、Microsoft Foundry または Azure OpenAI の Model Dep
 このリポジトリで開発するデスクトップ管理アプリケーション。GUI、Azure リソース管理、opencodex との連携を担当する。
 _Avoid_: Bridge proxy, Codex plugin
 
+**Azure CLI session**:
+Azure CLIが管理するログイン済みアカウントとトークンキャッシュ。FoundryCodex Bridgeは`AzureCLICredential`経由で再利用し、独自のEntraアプリ登録や認証キャッシュを持たない。Bridgeは共有セッションからサインアウトしない。
+_Avoid_: Bridge login cache, embedded Entra client
+
 **Azure Model Resource**:
 モデルデプロイを保持する Azure リソース。Microsoft Foundry リソースとスタンドアロン Azure OpenAI リソースの両方を含み、Foundry Project は含まない。
 _Avoid_: Foundry Account, Portal, Foundry portal, Azure account

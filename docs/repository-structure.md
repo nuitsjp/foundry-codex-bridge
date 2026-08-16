@@ -11,6 +11,7 @@ Wails v2 の標準構成を起点にし、Go 側は外部境界ごとの小さ�
 │   ├── adr/
 │   ├── architecture.md
 │   ├── development.md
+│   ├── phase-1-validation.md
 │   └── repository-structure.md
 ├── frontend/
 │   ├── src/
@@ -26,7 +27,9 @@ Wails v2 の標準構成を起点にし、Go 側は外部境界ごとの小さ�
 │   └── vite.config.ts
 ├── internal/
 │   ├── azure/
+│   │   ├── cli.go
 │   │   ├── client.go
+│   │   ├── client_test.go
 │   │   ├── candidates.go
 │   │   ├── errors.go
 │   │   ├── errors_test.go
@@ -44,9 +47,15 @@ Wails v2 の標準構成を起点にし、Go 側は外部境界ごとの小さ�
 │   │   └── types.go
 │   └── platform/
 │       ├── paths_other.go
-│       └── paths_windows.go
+│       ├── paths_windows.go
+│       ├── process_other.go
+│       └── process_windows.go
+├── scripts/
+│   ├── doctor.ps1
+│   └── init.ps1
 ├── app.go
 ├── main.go
+├── mise.toml
 ├── wails.json
 ├── go.mod
 ├── go.sum
@@ -60,14 +69,17 @@ Wails v2 の標準構成を起点にし、Go 側は外部境界ごとの小さ�
 - `main.go`: Wails アプリケーションの起動だけを担当する。
 - `app.go`: TypeScript へ公開する Wails bound method を置く。実処理は `internal/bridge` へ委譲する。
 - `wails.json`: Wails project configuration。
+- `mise.toml`: GoとWailsのバージョン、および開発タスクを定義する。
+- `scripts/doctor.ps1`: 開発環境の前提条件を読み取り診断する。
+- `scripts/init.ps1`: mise管理ツールとプロジェクト依存を初期化する。
 - `CONTEXT.md`: プロジェクト用語集。
 
 ## Go packages
 
-- `internal/azure`: Azure SDK client、Azure DTO mapping、認証レコード、認可エラーの分類。
+- `internal/azure`: Azure CLI実行境界、`AzureCLICredential`を使うAzure SDK client、Azure DTO mapping、認可エラーの分類。
 - `internal/opencodex`: opencodex のインストールと、公開 `ocx` CLI を使ったプロセス制御、health、Provider 管理。構造化出力があるコマンドは JSON を解析する。
 - `internal/bridge`: Azure と opencodex をまたぐアプリケーション use case。
-- `internal/platform`: OS ごとのユーザー設定ディレクトリ解決。
+- `internal/platform`: OS ごとのユーザー設定ディレクトリ解決と、WindowsのCLI非表示起動・UAC昇格起動。
 
 ## Frontend
 
@@ -77,7 +89,7 @@ Wails v2 の標準構成を起点にし、Go 側は外部境界ごとの小さ�
 
 ## Settings
 
-Bridge は非 secret な端末固有設定だけを `%LOCALAPPDATA%\FoundryCodexBridge\settings.json` に保存する。Azure の認証レコードは同じアプリデータディレクトリの `authentication-record.json` に保存し、トークンキャッシュの保存は Azure SDK に委ねる。opencodex のインストール先や Provider 対応表を roaming profile へ持ち出さない。
+Bridgeは非secretな端末固有設定だけを`%LOCALAPPDATA%\FoundryCodexBridge\settings.json`に保存する。Azureのログイン状態とトークンキャッシュはAzure CLIに委ね、Bridgeのアプリデータへ認証レコードを保存しない。opencodexのインストール先やProvider対応表をroaming profileへ持ち出さない。
 
 保存対象:
 
@@ -88,7 +100,7 @@ Bridge は非 secret な端末固有設定だけを `%LOCALAPPDATA%\FoundryCodex
 - last selected Azure Model Resource
 - last selected deployment
 
-secret は Azure SDK token cache または opencodex credential storage に委ねる。opencodex のインストール先、health が返す port、Node.js のバージョンは状態として検出し、settings.json には保存しない。
+secretはAzure CLIまたはopencodex credential storageに委ねる。Azure CLIとopencodexのインストール先、healthが返すport、Node.jsのバージョンは状態として検出し、settings.jsonには保存しない。
 
 ## Test layout
 
@@ -97,6 +109,7 @@ unit test は対象 package の隣に置く。
 ```text
 internal/
 ├── azure/
+│   ├── client_test.go
 │   └── errors_test.go
 ├── opencodex/
 │   └── provider_test.go

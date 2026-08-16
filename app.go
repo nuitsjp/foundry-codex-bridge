@@ -2,19 +2,11 @@ package main
 
 import (
 	"context"
-	"os"
-	"strings"
 
 	"github.com/nuitsjp/foundry-codex-bridge/internal/bridge"
 	"github.com/nuitsjp/foundry-codex-bridge/internal/opencodex"
 	"github.com/nuitsjp/foundry-codex-bridge/internal/platform"
 )
-
-const azureClientIDEnvironment = "FOUNDRYCODEX_AZURE_CLIENT_ID"
-
-// embeddedAzureClientID is populated by the release build. Development builds
-// can override it with FOUNDRYCODEX_AZURE_CLIENT_ID.
-var embeddedAzureClientID string
 
 type App struct {
 	ctx     context.Context
@@ -23,11 +15,7 @@ type App struct {
 
 func NewApp() *App {
 	dataDir := platform.AppDataDir()
-	clientID := embeddedAzureClientID
-	if override := strings.TrimSpace(os.Getenv(azureClientIDEnvironment)); override != "" {
-		clientID = override
-	}
-	azureClient := bridge.NewAzureClient(dataDir, clientID)
+	azureClient := bridge.NewAzureClient()
 	openCodeX := opencodex.NewManager(dataDir)
 	return &App{
 		service: bridge.NewService(azureClient, openCodeX, bridge.NewFileSettingsStore(dataDir)),
@@ -44,10 +32,6 @@ func (a *App) Snapshot() bridge.Snapshot {
 
 func (a *App) SignIn() (bridge.AuthState, error) {
 	return a.service.SignIn(a.ctx)
-}
-
-func (a *App) SignOut() error {
-	return a.service.SignOut(a.ctx)
 }
 
 func (a *App) Tenants() ([]bridge.Tenant, error) {

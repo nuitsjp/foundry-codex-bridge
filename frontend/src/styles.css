@@ -15,6 +15,8 @@ h3 { font-size: .95rem; margin-bottom: .75rem; color: #bbc9e9; }
 .status-pill, .state-label { display: inline-flex; align-items: center; gap: .5rem; border: 1px solid #34445f; border-radius: 99px; color: #aab9d8; font-size: .72rem; font-weight: 800; letter-spacing: .08em; padding: .55rem .8rem; white-space: nowrap; }
 .status-pill.ready, .state-label.good { border-color: #318d80; color: #7be7d8; }
 .status-pill.warning, .state-label { border-color: #685534; color: #f2ca74; }
+.auth-status { min-width: 17rem; justify-content: center; }
+.status-pill.pending, .state-label.pending { visibility: hidden; }
 .status-dot { width: .5rem; height: .5rem; border-radius: 50%; background: currentColor; }
 .tabs { display: flex; gap: .5rem; padding: 0 4rem; border-bottom: 1px solid #28344a; }
 .tab { border: 0; border-bottom: 2px solid transparent; color: #8291ad; background: transparent; padding: 1rem 1.25rem .85rem; }
@@ -23,6 +25,7 @@ h3 { font-size: .95rem; margin-bottom: .75rem; color: #bbc9e9; }
 .panel { background: rgba(20, 30, 48, .86); border: 1px solid #2d3b55; border-radius: 1rem; padding: 2rem; box-shadow: 0 1.5rem 4rem rgba(0,0,0,.18); }
 .panel-heading { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; margin-bottom: 1rem; }
 .lead { line-height: 1.7; max-width: 60rem; margin-bottom: 1.5rem; }
+.auth-actions { min-height: 7rem; }
 .field-grid, .split-grid, .prereq-grid { display: grid; gap: 1rem; }
 .field-grid { grid-template-columns: repeat(3, 1fr); margin-top: 1.75rem; }
 .split-grid { grid-template-columns: 1fr 1fr; margin-top: 2rem; }
@@ -36,7 +39,6 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .secondary { color: #dce8ff; background: #17243a; border: 1px solid #4a5e80; }
 .wide { width: 100%; margin-top: 1rem; }
 .notice { border-radius: .65rem; padding: .8rem 1rem; margin-bottom: 1rem; line-height: 1.55; font-size: .86rem; }
-.notice.loading { background: #183345; color: #97e9df; border: 1px solid #2d837f; }
 .notice.error { background: #44232c; color: #ffb8bd; border: 1px solid #8d4650; }
 .notice.warning { background: #3d311f; color: #f3d18c; border: 1px solid #755b31; }
 .card-list { display: grid; gap: .55rem; }
@@ -51,5 +53,10 @@ button.list-card:hover, .list-card.selected { border-color: #65d5c6; background:
 .check { flex-direction: row; align-items: flex-start; margin-top: 1rem; line-height: 1.5; }.check input { margin-top: .2rem; accent-color: #65d5c6; }
 .sync-result { margin-top: 1.5rem; border: 1px solid #2e415f; border-radius: .7rem; padding: 1rem; }.sync-result.success { border-color: #2c786f; }.sync-result.failure { border-color: #725938; }.sync-result h3 { color: #fff; }
 .stage { display: grid; grid-template-columns: 1.4rem 7rem 1fr; gap: .5rem; align-items: baseline; border-top: 1px solid #273750; padding: .65rem 0; font-size: .78rem; }.stage span:last-child { color: #91a2c2; }.stage .succeeded { color: #7be7d8; }.stage .failed { color: #ffbe83; }
-footer { display: flex; justify-content: space-between; gap: 1rem; color: #667a9d; border-top: 1px solid #28344a; padding: 1rem 4rem; font-size: .72rem; }
+footer { display: flex; justify-content: space-between; align-items: center; gap: 1rem; min-height: 3.2rem; color: #667a9d; border-top: 1px solid #28344a; padding: 1rem 4rem; font-size: .72rem; }
+.activity-status { display: inline-flex; justify-content: flex-end; align-items: center; gap: .5rem; width: 18rem; min-width: 18rem; min-height: 1rem; color: #7be7d8; white-space: nowrap; }
+.activity-spinner { width: .75rem; height: .75rem; flex: 0 0 auto; border: 2px solid #315b5b; border-top-color: #7be7d8; border-radius: 50%; animation: activity-spin .8s linear infinite; }
+.activity-label { overflow: hidden; text-overflow: ellipsis; }
+@keyframes activity-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .activity-spinner { animation: none; } }
 @media (max-width: 1100px) { .content { width: calc(100% - 4rem); }.topbar, .tabs, footer { padding-left: 2rem; padding-right: 2rem; }.field-grid, .prereq-grid { grid-template-columns: 1fr 1fr; } }

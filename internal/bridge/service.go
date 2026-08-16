@@ -17,7 +17,7 @@ func (s *Service) Snapshot(ctx context.Context) Snapshot {
 		settings = Settings{ManagedProviders: map[string]string{}}
 	}
 	state, _ := s.opencodex.State(ctx)
-	auth := s.azure.AuthState()
+	auth := s.azure.AuthState(ctx)
 	return Snapshot{
 		Auth:             auth,
 		Selection:        settings.Selection,
@@ -30,32 +30,44 @@ func (s *Service) SignIn(ctx context.Context) (AuthState, error) {
 	return s.azure.Authenticate(s.context(ctx))
 }
 
-func (s *Service) SignOut(ctx context.Context) error {
-	return s.azure.SignOut(s.context(ctx))
-}
-
 func (s *Service) Tenants(ctx context.Context) ([]Tenant, error) {
-	return s.azure.Tenants(s.context(ctx))
+	values, err := s.azure.Tenants(s.context(ctx))
+	return normalizeListResult(values, err)
 }
 
 func (s *Service) Subscriptions(ctx context.Context, tenantID string) ([]Subscription, error) {
-	return s.azure.Subscriptions(s.context(ctx), tenantID)
+	values, err := s.azure.Subscriptions(s.context(ctx), tenantID)
+	return normalizeListResult(values, err)
 }
 
 func (s *Service) ResourceGroups(ctx context.Context, tenantID, subscriptionID string) ([]ResourceGroup, error) {
-	return s.azure.ResourceGroups(s.context(ctx), tenantID, subscriptionID)
+	values, err := s.azure.ResourceGroups(s.context(ctx), tenantID, subscriptionID)
+	return normalizeListResult(values, err)
 }
 
 func (s *Service) ModelResources(ctx context.Context, tenantID, subscriptionID, resourceGroup string) ([]ModelResource, error) {
-	return s.azure.ModelResources(s.context(ctx), tenantID, subscriptionID, resourceGroup)
+	values, err := s.azure.ModelResources(s.context(ctx), tenantID, subscriptionID, resourceGroup)
+	return normalizeListResult(values, err)
 }
 
 func (s *Service) Deployments(ctx context.Context, tenantID, subscriptionID, resourceGroup, resourceName string) ([]Deployment, error) {
-	return s.azure.Deployments(s.context(ctx), tenantID, subscriptionID, resourceGroup, resourceName)
+	values, err := s.azure.Deployments(s.context(ctx), tenantID, subscriptionID, resourceGroup, resourceName)
+	return normalizeListResult(values, err)
 }
 
 func (s *Service) Models(ctx context.Context, tenantID, subscriptionID, resourceGroup, resourceName string) ([]DeployableModel, error) {
-	return s.azure.Models(s.context(ctx), tenantID, subscriptionID, resourceGroup, resourceName)
+	values, err := s.azure.Models(s.context(ctx), tenantID, subscriptionID, resourceGroup, resourceName)
+	return normalizeListResult(values, err)
+}
+
+func normalizeListResult[T any](values []T, err error) ([]T, error) {
+	if err != nil {
+		return nil, err
+	}
+	if values == nil {
+		return []T{}, nil
+	}
+	return values, nil
 }
 
 func (s *Service) PrepareOpenCodex(ctx context.Context) (OpenCodexState, error) {
@@ -180,13 +192,15 @@ func (s *Service) Sync(ctx context.Context, request SyncRequest) SyncResult {
 	}
 	primaryKey = ""
 
-	if err := s.runStage(&result, "model", "Register selected custom model", func() error {
-		return s.opencodex.EnsureCustomModel(ctx, providerID, request.DeploymentName)
+	if err := s.runStage(&result, "selected", "Select model in opencodex", func() error {
+		return s.opencodex.SelectModel(ctx, providerID, request.DeploymentName)
 	}); err != nil {
 		return result
 	}
-	if err := s.runStage(&result, "selected", "Select model in opencodex", func() error {
-		return s.opencodex.SelectModel(ctx, providerID, request.DeploymentName)
+	// models add writes the disk config directly. Keep it after live-proxy mutations so
+	// a stale proxy snapshot cannot overwrite the newly registered custom model.
+	if err := s.runStage(&result, "model", "Register selected custom model", func() error {
+		return s.opencodex.EnsureCustomModel(ctx, providerID, request.DeploymentName)
 	}); err != nil {
 		return result
 	}
@@ -304,8 +318,8 @@ func deploymentIsCodexCandidate(deployment Deployment, models []DeployableModel)
 	return false
 }
 
-func NewAzureClient(dataDir, clientID string) azure.Client {
-	return azure.NewSDKClient(dataDir, clientID)
+func NewAzureClient() azure.Client {
+	return azure.NewSDKClient()
 }
 
 var _ opencodex.ManagerAPI = (*opencodex.Manager)(nil)

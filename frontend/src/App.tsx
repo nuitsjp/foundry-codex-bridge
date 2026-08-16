@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, type Deployment, type DeployableModel, type ModelResource, type OpenCodexState, type ResourceGroup, type Selection, type Subscription, type SyncResult, type Tenant } from "./api";
+import ActivityStatus from "./ActivityStatus";
 
 type Tab = "connect" | "deployments" | "opencodex" | "sync";
 
@@ -21,9 +22,15 @@ function selectExisting<T>(values: T[], preferred: string | undefined, key: (val
   return values.length > 0 ? key(values[0]) : "";
 }
 
+function selectInitialTenant(values: Tenant[], savedTenantId: string, authTenantId: string): string {
+  return selectExisting(values, savedTenantId || authTenantId, (value) => value.id);
+}
+
 export default function App() {
   const [tab, setTab] = useState<Tab>("connect");
-  const [auth, setAuth] = useState({ signedIn: false, username: "", tenantId: "" });
+  const [initialized, setInitialized] = useState(false);
+  const [initializationFailed, setInitializationFailed] = useState(false);
+  const [auth, setAuth] = useState({ cliInstalled: false, cliVersion: "", signedIn: false, username: "", tenantId: "", message: "" });
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [groups, setGroups] = useState<ResourceGroup[]>([]);
@@ -50,8 +57,11 @@ export default function App() {
       setAuth(snapshot.auth);
       setOpenCodex(snapshot.openCodex);
       if (snapshot.auth.signedIn) {
-        await loadHierarchy(snapshot.selection);
+        await loadHierarchy(snapshot.selection, snapshot.auth.tenantId);
       }
+    }).then((succeeded) => {
+      setInitializationFailed(!succeeded);
+      setInitialized(true);
     });
   }, []);
 
@@ -60,8 +70,10 @@ export default function App() {
     setError("");
     try {
       await action();
+      return true;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "処理に失敗しました");
+      return false;
     } finally {
       setBusy("");
     }
@@ -71,21 +83,6 @@ export default function App() {
     setProviderId("");
     setConfirmCosts(false);
     setSyncResult(null);
-  }
-
-  function clearAzureSelection() {
-    setTenants([]);
-    setSubscriptions([]);
-    setGroups([]);
-    setResources([]);
-    setDeployments([]);
-    setModels([]);
-    setTenantId("");
-    setSubscriptionId("");
-    setResourceGroup("");
-    setResourceName("");
-    setDeploymentName("");
-    clearSyncSelection();
   }
 
   async function loadResourceDetailsFor(tenant: string, subscription: string, group: string, resource: string, preferredDeployment?: string) {
@@ -147,10 +144,10 @@ export default function App() {
     return loadGroupsFor(tenant, subscription, preferredGroup, preferredResource, preferredDeployment);
   }
 
-  async function loadHierarchy(preferred?: Partial<Selection>) {
+  async function loadHierarchy(preferred?: Partial<Selection>, authTenantId = auth.tenantId) {
     const values = await api.tenants();
     setTenants(values);
-    const tenant = selectExisting(values, preferred?.tenantId, (value) => value.id);
+    const tenant = selectInitialTenant(values, preferred?.tenantId ?? "", authTenantId);
     setTenantId(tenant);
     const selected = await loadSubscriptionsFor(tenant, preferred?.subscriptionId, preferred?.resourceGroup, preferred?.resourceName, preferred?.deploymentName);
     const restored = selected.resource === preferred?.resourceName && selected.deployment === preferred?.deploymentName;
@@ -160,10 +157,10 @@ export default function App() {
   }
 
   async function signIn() {
-    await run("ブラウザ認証を待機中", async () => {
+    await run("Azure CLIのサインインを待機中", async () => {
       const value = await api.signIn();
       setAuth(value);
-      await loadHierarchy();
+      await loadHierarchy(undefined, value.tenantId);
     });
   }
 
@@ -204,14 +201,6 @@ export default function App() {
     clearSyncSelection();
   }
 
-  async function signOut() {
-    await run("サインアウト中", async () => {
-      await api.signOut();
-      setAuth({ signedIn: false, username: "", tenantId: "" });
-      clearAzureSelection();
-    });
-  }
-
   async function prepareOpenCodex() {
     await run("opencodexを準備中", async () => setOpenCodex(await api.prepareOpenCodex()));
   }
@@ -238,9 +227,9 @@ export default function App() {
           <h1>FoundryCodex Bridge</h1>
           <p className="subtitle">Azure Model Deploymentをopencodex経由でCodexへ接続します。</p>
         </div>
-        <div className={`status-pill ${auth.signedIn ? "ready" : "warning"}`}>
+        <div className={`status-pill auth-status ${!initialized ? "pending" : auth.signedIn ? "ready" : "warning"}`} aria-hidden={!initialized}>
           <span className="status-dot" />
-          {auth.signedIn ? `サインイン済み: ${auth.username}` : "Azure未接続"}
+          {initialized ? initializationFailed ? "Azure CLI状態取得失敗" : auth.signedIn ? `Azure CLI: ${auth.username}` : auth.cliInstalled ? "Azure CLI未接続" : "Azure CLI未検出" : "Azure CLI"}
         </div>
       </header>
 
@@ -253,18 +242,26 @@ export default function App() {
       </nav>
 
       <section className="content">
-        {busy && <div className="notice loading">{busy}</div>}
         {error && <div className="notice error" role="alert">{error}</div>}
 
         {tab === "connect" && <section className="panel">
-          <div className="panel-heading"><div><p className="eyebrow">01 / CONNECT</p><h2>Azureへ接続</h2></div><span className="state-label">{auth.signedIn ? "READY" : "REQUIRED"}</span></div>
-          <p className="lead">Azure CLIは使わず、プロジェクト所有のマルチテナントEntraアプリでブラウザ認証します。</p>
-          {!auth.signedIn ? <button className="primary" onClick={signIn}>ブラウザでサインイン</button> : <button className="secondary" onClick={signOut}>サインアウト</button>}
+          <div className="panel-heading"><div><p className="eyebrow">01 / CONNECT</p><h2>Azureへ接続</h2></div><span className={`state-label ${!initialized || initializationFailed ? "pending" : ""}`} aria-hidden={!initialized || initializationFailed}>{auth.signedIn ? "READY" : "REQUIRED"}</span></div>
+          <p className="lead">Azure CLIのログイン済み資格情報を使用します。Bridge独自のEntraアプリを利用者のTenantへ追加しません。</p>
+          <div className="auth-actions">
+            {initialized && !initializationFailed && <>
+              {!auth.cliInstalled && <div className="notice warning">Azure CLIをインストールしてからBridgeを再起動してください。</div>}
+              <button className={auth.signedIn ? "secondary" : "primary"} onClick={signIn} disabled={!auth.cliInstalled}>
+                {auth.signedIn ? "Azure CLIでアカウントを変更" : "Azure CLIでサインイン"}
+              </button>
+              {auth.cliInstalled && <p className="hint">Azure CLI {auth.cliVersion || "version不明"}。Bridgeは共有セッションからサインアウトしません。</p>}
+            </>}
+          </div>
           <div className="field-grid">
             <label>Tenant<select value={tenantId} onChange={(event) => void selectTenant(event.target.value)} disabled={!auth.signedIn}><option value="">選択してください</option>{tenants.map((item) => <option key={item.id} value={item.id}>{item.displayName || item.id}</option>)}</select></label>
             <label>Subscription<select value={subscriptionId} onChange={(event) => void selectSubscription(event.target.value)} disabled={!tenantId}><option value="">選択してください</option>{subscriptions.map((item) => <option key={item.id} value={item.id}>{item.name || item.id}</option>)}</select></label>
             <label>Resource group<select value={resourceGroup} onChange={(event) => void selectGroup(event.target.value)} disabled={!subscriptionId}><option value="">選択してください</option>{groups.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}</select></label>
           </div>
+          {initialized && !initializationFailed && subscriptionId && !busy && !error && groups.length === 0 && <p className="hint">このSubscriptionにはAzure Model Resourceがありません。</p>}
         </section>}
 
         {tab === "deployments" && <section className="panel">
@@ -288,12 +285,16 @@ export default function App() {
           <div className="panel-heading"><div><p className="eyebrow">04 / SYNC</p><h2>Codexへ反映</h2></div><span className="state-label">EXPLICIT ACTION</span></div>
           <div className="summary"><span>Resource</span><b>{resourceName || "未選択"}</b><span>Deployment</span><b>{deploymentName || "未選択"}</b></div>
           <label>Provider ID<input value={providerId} onChange={(event) => setProviderId(event.target.value)} placeholder={resourceName ? `az-${resourceName}` : "az-resource-name"} /></label>
+          <p className="hint">opencodex serviceが未登録の場合、初回のSyncでWindowsの管理者承認が表示されます。</p>
           <label className="check"><input type="checkbox" checked={confirmCosts} onChange={(event) => setConfirmCosts(event.target.checked)} /> Sync後に実際のResponsesリクエストを送ることと、Azure料金が発生し得ることを確認しました。</label>
           <button className="primary wide" disabled={!auth.signedIn || !resourceName || !deploymentName || !openCodex.installed || !confirmCosts || Boolean(busy)} onClick={sync}>Syncを明示実行</button>
           {syncResult && <div className={`sync-result ${syncResult.ok ? "success" : "failure"}`}><h3>{syncResult.ok ? "Sync完了" : "Syncは未完了"}</h3>{syncResult.stages.map((stage) => <div className="stage" key={stage.name}><span className={stage.status}>{stage.status === "succeeded" ? "✓" : "!"}</span><b>{stage.name}</b><span>{stage.message}</span></div>)}</div>}
         </section>}
       </section>
-      <footer><span>起動時は読み取り専用です。Provider、Catalog、service、接続テストはこの画面でSyncを実行した場合だけ変更します。</span>{busy && <span>{busy}</span>}</footer>
+      <footer>
+        <span>起動時は読み取り専用です。Provider、Catalog、service、接続テストはこの画面でSyncを実行した場合だけ変更します。</span>
+        <ActivityStatus message={busy} />
+      </footer>
     </main>
   );
 }
