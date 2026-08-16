@@ -12,6 +12,7 @@ Wails v2 の標準構成を起点にし、Go 側は外部境界ごとの小さ�
 │   ├── architecture.md
 │   ├── development.md
 │   ├── phase-1-validation.md
+│   ├── phase-2-validation.md
 │   └── repository-structure.md
 ├── frontend/
 │   ├── src/
@@ -38,9 +39,12 @@ Wails v2 の標準構成を起点にし、Go 側は外部境界ごとの小さ�
 │   │   ├── cli.go
 │   │   ├── installer.go
 │   │   ├── lifecycle.go
+│   │   ├── management.go
+│   │   ├── phase2.go
 │   │   ├── provider_test.go
 │   │   └── types.go
 │   ├── bridge/
+│   │   ├── management.go
 │   │   ├── service.go
 │   │   ├── settings.go
 │   │   ├── sync_test.go
@@ -98,7 +102,7 @@ Bridgeは非secretな端末固有設定だけを`%LOCALAPPDATA%\FoundryCodexBrid
 - last selected subscription
 - last selected resource group
 - last selected Azure Model Resource
-- last selected deployment
+- last selected deployments and default deployment
 
 secretはAzure CLIまたはopencodex credential storageに委ねる。Azure CLIとopencodexのインストール先、healthが返すport、Node.jsのバージョンは状態として検出し、settings.jsonには保存しない。
 
@@ -112,8 +116,12 @@ internal/
 │   ├── client_test.go
 │   └── errors_test.go
 ├── opencodex/
+│   ├── management_test.go
+│   ├── phase2_test.go
 │   └── provider_test.go
 └── bridge/
+    ├── management_test.go
+    ├── settings_test.go
     └── sync_test.go
 ```
 

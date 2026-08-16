@@ -17,13 +17,27 @@ type DeployableModel = azure.DeployableModel
 type OpenCodexState = opencodex.State
 
 type Selection struct {
-	TenantID       string `json:"tenantId"`
-	SubscriptionID string `json:"subscriptionId"`
-	ResourceGroup  string `json:"resourceGroup"`
-	ResourceID     string `json:"resourceId"`
-	ResourceName   string `json:"resourceName"`
-	DeploymentName string `json:"deploymentName"`
-	ProviderID     string `json:"providerId"`
+	TenantID              string   `json:"tenantId"`
+	SubscriptionID        string   `json:"subscriptionId"`
+	ResourceGroup         string   `json:"resourceGroup"`
+	ResourceID            string   `json:"resourceId"`
+	ResourceName          string   `json:"resourceName"`
+	DeploymentNames       []string `json:"deploymentNames"`
+	DefaultDeploymentName string   `json:"defaultDeploymentName"`
+	DeploymentName        string   `json:"-"`
+	ProviderID            string   `json:"providerId"`
+}
+
+type ManagedProvider struct {
+	ResourceID            string   `json:"resourceId"`
+	ProviderID            string   `json:"providerId"`
+	TenantID              string   `json:"tenantId"`
+	SubscriptionID        string   `json:"subscriptionId"`
+	ResourceGroup         string   `json:"resourceGroup"`
+	ResourceName          string   `json:"resourceName"`
+	Location              string   `json:"location"`
+	DeploymentNames       []string `json:"deploymentNames"`
+	DefaultDeploymentName string   `json:"defaultDeploymentName"`
 }
 
 type Snapshot struct {
@@ -34,13 +48,14 @@ type Snapshot struct {
 }
 
 type SyncRequest struct {
-	TenantID       string `json:"tenantId"`
-	SubscriptionID string `json:"subscriptionId"`
-	ResourceGroup  string `json:"resourceGroup"`
-	ResourceName   string `json:"resourceName"`
-	DeploymentName string `json:"deploymentName"`
-	ProviderID     string `json:"providerId"`
-	ConfirmCosts   bool   `json:"confirmCosts"`
+	TenantID              string   `json:"tenantId"`
+	SubscriptionID        string   `json:"subscriptionId"`
+	ResourceGroup         string   `json:"resourceGroup"`
+	ResourceName          string   `json:"resourceName"`
+	DeploymentNames       []string `json:"deploymentNames"`
+	DefaultDeploymentName string   `json:"defaultDeploymentName"`
+	ProviderID            string   `json:"providerId"`
+	ConfirmCosts          bool     `json:"confirmCosts"`
 }
 
 type SyncStage struct {
@@ -50,15 +65,54 @@ type SyncStage struct {
 }
 
 type SyncResult struct {
-	OK         bool        `json:"ok"`
-	ProviderID string      `json:"providerId"`
-	Deployment string      `json:"deployment"`
-	Stages     []SyncStage `json:"stages"`
+	OK          bool               `json:"ok"`
+	ProviderID  string             `json:"providerId"`
+	Deployment  string             `json:"deployment"`
+	Stages      []SyncStage        `json:"stages"`
+	Connections []ConnectionResult `json:"connections"`
+}
+
+type ConnectionResult struct {
+	Deployment string `json:"deployment"`
+	Status     string `json:"status"`
+	Message    string `json:"message"`
+}
+
+type SyncChange struct {
+	Area    string `json:"area"`
+	Action  string `json:"action"`
+	Details string `json:"details"`
+}
+
+type SyncPreview struct {
+	OK         bool         `json:"ok"`
+	ProviderID string       `json:"providerId"`
+	Changes    []SyncChange `json:"changes"`
+	Message    string       `json:"message"`
+}
+
+type DisconnectPreview struct {
+	OK                   bool            `json:"ok"`
+	Managed              ManagedProvider `json:"managed"`
+	IsDefault            bool            `json:"isDefault"`
+	DependentCombos      []string        `json:"dependentCombos"`
+	ReplacementProviders []string        `json:"replacementProviders"`
+	Message              string          `json:"message"`
+}
+
+type DisconnectRequest struct {
+	ResourceID            string `json:"resourceId"`
+	ReplacementProviderID string `json:"replacementProviderId"`
+}
+
+type ActionResult struct {
+	OK     bool        `json:"ok"`
+	Stages []SyncStage `json:"stages"`
 }
 
 type Settings struct {
-	Selection        Selection         `json:"selection"`
-	ManagedProviders map[string]string `json:"managedProviders,omitempty"`
+	Selection        Selection                  `json:"selection"`
+	ManagedProviders map[string]ManagedProvider `json:"managedProviders,omitempty"`
 }
 
 type SettingsStore interface {

@@ -14,7 +14,7 @@ func (s *Service) Snapshot(ctx context.Context) Snapshot {
 	ctx = s.context(ctx)
 	settings, err := s.settings.Load()
 	if err != nil {
-		settings = Settings{ManagedProviders: map[string]string{}}
+		settings = Settings{ManagedProviders: map[string]ManagedProvider{}}
 	}
 	state, _ := s.opencodex.State(ctx)
 	auth := s.azure.AuthState(ctx)
@@ -80,7 +80,7 @@ func (s *Service) OpenCodexState(ctx context.Context) (OpenCodexState, error) {
 
 func (s *Service) Sync(ctx context.Context, request SyncRequest) SyncResult {
 	ctx = s.context(ctx)
-	result := SyncResult{ProviderID: request.ProviderID, Deployment: request.DeploymentName}
+	result := SyncResult{ProviderID: request.ProviderID, Deployment: request.DefaultDeploymentName}
 	if !s.mu.TryLock() {
 		return failSync(result, "sync", "Sync is already running")
 	}
@@ -89,6 +89,8 @@ func (s *Service) Sync(ctx context.Context, request SyncRequest) SyncResult {
 	if err := validateSyncRequest(request); err != nil {
 		return failSync(result, "validate", err.Error())
 	}
+	defaultDeploymentName := strings.TrimSpace(request.DefaultDeploymentName)
+	result.Deployment = defaultDeploymentName
 	resource, err := s.azure.GetModelResource(ctx, request.TenantID, request.SubscriptionID, request.ResourceGroup, request.ResourceName)
 	if err != nil {
 		return failSync(result, "azure-resource", safeErrorMessage(err))
@@ -103,33 +105,42 @@ func (s *Service) Sync(ctx context.Context, request SyncRequest) SyncResult {
 	if err != nil {
 		return failSync(result, "azure-deployments", safeErrorMessage(err))
 	}
-	var selectedDeployment Deployment
-	for _, deployment := range deployments {
-		if deployment.Name == request.DeploymentName {
-			selectedDeployment = deployment
-			break
-		}
-	}
-	if selectedDeployment.Name == "" {
-		return failSync(result, "azure-deployment", "the selected deployment does not exist in the Azure Model Resource")
-	}
 	models, err := s.azure.Models(ctx, request.TenantID, request.SubscriptionID, request.ResourceGroup, request.ResourceName)
 	if err != nil {
 		return failSync(result, "azure-models", safeErrorMessage(err))
 	}
-	if !deploymentIsCodexCandidate(selectedDeployment, models) {
-		return failSync(result, "azure-deployment", "the selected deployment is not supported by the opencodex Codex route")
+	deploymentNames := normalizeDeploymentInput(request.DeploymentNames, defaultDeploymentName)
+	requested := make(map[string]struct{}, len(deploymentNames))
+	for _, name := range deploymentNames {
+		requested[name] = struct{}{}
+	}
+	orderedDeployments := make([]Deployment, 0, len(deploymentNames))
+	for _, deployment := range deployments {
+		if _, ok := requested[deployment.Name]; ok {
+			orderedDeployments = append(orderedDeployments, deployment)
+			delete(requested, deployment.Name)
+		}
+	}
+	if len(requested) != 0 {
+		return failSync(result, "azure-deployment", "one or more selected deployments do not exist in the Azure Model Resource")
+	}
+	for _, deployment := range orderedDeployments {
+		if !deploymentIsCodexCandidate(deployment, models) {
+			return failSync(result, "azure-deployment", "one or more selected deployments are not supported by the opencodex Codex route")
+		}
+	}
+	deploymentNames = make([]string, 0, len(orderedDeployments))
+	for _, deployment := range orderedDeployments {
+		deploymentNames = append(deploymentNames, deployment.Name)
 	}
 	settings, err := s.settings.Load()
 	if err != nil {
 		return failSync(result, "settings", "Bridge settings could not be read")
 	}
-	if settings.ManagedProviders == nil {
-		settings.ManagedProviders = map[string]string{}
-	}
-	providerID := request.ProviderID
+	normalizeSettings(&settings)
+	providerID := strings.TrimSpace(request.ProviderID)
 	if providerID == "" {
-		providerID = settings.ManagedProviders[resource.ID]
+		providerID = settings.ManagedProviders[resource.ID].ProviderID
 		if providerID == "" {
 			providerID = defaultProviderID(resource.Name)
 		}
@@ -150,14 +161,20 @@ func (s *Service) Sync(ctx context.Context, request SyncRequest) SyncResult {
 		return failSync(result, "opencodex", "opencodex is not installed; use Prepare opencodex first")
 	}
 
-	if existing := settings.ManagedProviders[resource.ID]; existing != "" && existing != providerID {
+	existingManaged := settings.ManagedProviders[resource.ID]
+	if existingManaged.ProviderID != "" && existingManaged.ProviderID != providerID {
 		return failSync(result, "provider", "a different Provider ID is already managed for this Azure Model Resource")
 	}
-	if existing, err := s.opencodex.ProviderExists(ctx, providerID); err != nil {
+	providers, err := s.opencodex.Providers(ctx)
+	if err != nil {
 		return failSync(result, "provider", safeErrorMessage(err))
-	} else if existing && settings.ManagedProviders[resource.ID] == "" {
-		return failSync(result, "provider", "Provider ID is already used by an unmanaged opencodex Provider")
 	}
+	for _, provider := range providers {
+		if provider.Name == providerID && existingManaged.ProviderID == "" {
+			return failSync(result, "provider", "Provider ID is already used by an unmanaged opencodex Provider")
+		}
+	}
+	result.Stages = pendingSyncStages()
 
 	if err := s.runStage(&result, "service", "Ensure opencodex service", func() error {
 		return s.opencodex.EnsureService(ctx)
@@ -166,17 +183,23 @@ func (s *Service) Sync(ctx context.Context, request SyncRequest) SyncResult {
 	}
 	baseURL := openAIBaseURL(resource.Endpoint)
 	if err := s.runStage(&result, "provider", "Configure Bridge-managed Provider", func() error {
-		return s.opencodex.EnsureProvider(ctx, providerID, baseURL, request.DeploymentName)
+		return s.opencodex.EnsureProvider(ctx, providerID, baseURL, defaultDeploymentName)
 	}); err != nil {
 		return result
 	}
+	customModels := append([]string{}, deploymentNames...)
 	settings.Selection = Selection{
 		TenantID: request.TenantID, SubscriptionID: request.SubscriptionID, ResourceGroup: request.ResourceGroup,
-		ResourceID: resource.ID, ResourceName: resource.Name, DeploymentName: request.DeploymentName, ProviderID: providerID,
+		ResourceID: resource.ID, ResourceName: resource.Name, DeploymentNames: append([]string{}, deploymentNames...), DefaultDeploymentName: defaultDeploymentName, ProviderID: providerID,
 	}
-	settings.ManagedProviders[resource.ID] = providerID
-	if err := s.settings.Save(settings); err != nil {
-		return failSync(result, "settings", "Bridge settings could not be saved")
+	settings.ManagedProviders[resource.ID] = ManagedProvider{ResourceID: resource.ID, ProviderID: providerID, TenantID: request.TenantID, SubscriptionID: request.SubscriptionID, ResourceGroup: request.ResourceGroup, ResourceName: resource.Name, Location: resource.Location, DeploymentNames: append([]string{}, deploymentNames...), DefaultDeploymentName: defaultDeploymentName}
+	if err := s.runStage(&result, "settings", "Save Bridge-managed Provider mapping", func() error {
+		if err := s.settings.Save(settings); err != nil {
+			return errors.New("Bridge settings could not be saved")
+		}
+		return nil
+	}); err != nil {
+		return result
 	}
 
 	keys, err := s.azure.ListKeys(ctx, request.TenantID, request.SubscriptionID, request.ResourceGroup, request.ResourceName)
@@ -192,15 +215,15 @@ func (s *Service) Sync(ctx context.Context, request SyncRequest) SyncResult {
 	}
 	primaryKey = ""
 
-	if err := s.runStage(&result, "selected", "Select model in opencodex", func() error {
-		return s.opencodex.SelectModel(ctx, providerID, request.DeploymentName)
+	if err := s.runStage(&result, "selected", "Select models in opencodex", func() error {
+		return s.opencodex.EnsureSelectedModels(ctx, providerID, deploymentNames)
 	}); err != nil {
 		return result
 	}
 	// models add writes the disk config directly. Keep it after live-proxy mutations so
 	// a stale proxy snapshot cannot overwrite the newly registered custom model.
-	if err := s.runStage(&result, "model", "Register selected custom model", func() error {
-		return s.opencodex.EnsureCustomModel(ctx, providerID, request.DeploymentName)
+	if err := s.runStage(&result, "model", "Register selected custom models", func() error {
+		return s.opencodex.EnsureCustomModels(ctx, providerID, customModels)
 	}); err != nil {
 		return result
 	}
@@ -213,22 +236,56 @@ func (s *Service) Sync(ctx context.Context, request SyncRequest) SyncResult {
 	if err != nil || !state.Health.Ready {
 		return failSync(result, "connection", "opencodex health did not report a ready service")
 	}
-	if err := s.runStage(&result, "connection", "Test Responses endpoint", func() error {
-		return s.opencodex.TestResponse(ctx, state.Health.Port, providerID, request.DeploymentName)
-	}); err != nil {
+	connectionFailed := false
+	for _, deployment := range deploymentNames {
+		connection := ConnectionResult{Deployment: deployment, Status: "succeeded", Message: "Responses endpoint is ready"}
+		if err := s.opencodex.TestResponse(ctx, state.Health.Port, providerID, deployment); err != nil {
+			connection.Status = "failed"
+			connection.Message = safeErrorMessage(err)
+			connectionFailed = true
+		}
+		result.Connections = append(result.Connections, connection)
+	}
+	if connectionFailed {
+		setSyncStage(&result, "connection", "failed", "one or more Responses endpoint tests failed")
 		return result
 	}
+	setSyncStage(&result, "connection", "succeeded", "Test Responses endpoint")
 	result.OK = true
 	return result
 }
 
 func (s *Service) runStage(result *SyncResult, name, description string, action func() error) error {
 	if err := action(); err != nil {
-		result.Stages = append(result.Stages, SyncStage{Name: name, Status: "failed", Message: safeErrorMessage(err)})
+		setSyncStage(result, name, "failed", safeErrorMessage(err))
 		return err
 	}
-	result.Stages = append(result.Stages, SyncStage{Name: name, Status: "succeeded", Message: description})
+	setSyncStage(result, name, "succeeded", description)
 	return nil
+}
+
+func pendingSyncStages() []SyncStage {
+	return []SyncStage{
+		{Name: "service", Status: "pending", Message: "Ensure opencodex service"},
+		{Name: "provider", Status: "pending", Message: "Configure Bridge-managed Provider"},
+		{Name: "settings", Status: "pending", Message: "Save Bridge-managed Provider mapping"},
+		{Name: "key", Status: "pending", Message: "Register PrimaryKey through opencodex"},
+		{Name: "selected", Status: "pending", Message: "Select models in opencodex"},
+		{Name: "model", Status: "pending", Message: "Register selected custom models"},
+		{Name: "catalog", Status: "pending", Message: "Sync Codex Catalog"},
+		{Name: "connection", Status: "pending", Message: "Test Responses endpoints"},
+	}
+}
+
+func setSyncStage(result *SyncResult, name, status, message string) {
+	for index := range result.Stages {
+		if result.Stages[index].Name == name {
+			result.Stages[index].Status = status
+			result.Stages[index].Message = message
+			return
+		}
+	}
+	result.Stages = append(result.Stages, SyncStage{Name: name, Status: status, Message: message})
 }
 
 func validateSyncRequest(request SyncRequest) error {
@@ -237,7 +294,6 @@ func validateSyncRequest(request SyncRequest) error {
 		"subscription":         request.SubscriptionID,
 		"resource group":       request.ResourceGroup,
 		"Azure Model Resource": request.ResourceName,
-		"deployment":           request.DeploymentName,
 	} {
 		if strings.TrimSpace(value) == "" {
 			return fmt.Errorf("%s must be selected", name)
@@ -246,12 +302,42 @@ func validateSyncRequest(request SyncRequest) error {
 	if !request.ConfirmCosts {
 		return errors.New("Sync sends a real Responses request and may incur Azure charges; confirm the warning first")
 	}
-	return nil
+	names := normalizeDeploymentInput(request.DeploymentNames, request.DefaultDeploymentName)
+	if len(names) == 0 {
+		return errors.New("at least one deployment must be selected")
+	}
+	defaultName := strings.TrimSpace(request.DefaultDeploymentName)
+	for _, name := range names {
+		if name == defaultName {
+			return nil
+		}
+	}
+	return errors.New("default deployment must be included in the selected deployments")
+}
+
+func normalizeDeploymentInput(names []string, defaultName string) []string {
+	result := make([]string, 0, len(names))
+	seen := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		result = append(result, name)
+	}
+	if len(result) == 0 && strings.TrimSpace(defaultName) != "" {
+		return []string{strings.TrimSpace(defaultName)}
+	}
+	return result
 }
 
 func failSync(result SyncResult, name, message string) SyncResult {
 	result.OK = false
-	result.Stages = append(result.Stages, SyncStage{Name: name, Status: "failed", Message: message})
+	setSyncStage(&result, name, "failed", message)
 	return result
 }
 

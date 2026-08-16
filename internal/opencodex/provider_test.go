@@ -9,9 +9,11 @@ import (
 )
 
 type fakeRunner struct {
-	calls      []fakeCall
-	statusJSON string
-	accountErr error
+	calls         []fakeCall
+	statusJSON    string
+	accountErr    error
+	providersJSON string
+	providerJSON  string
 }
 
 type fakeCall struct {
@@ -26,6 +28,16 @@ func (f *fakeRunner) Run(_ context.Context, stdin string, args ...string) (Comma
 	}
 	if len(args) >= 1 && args[0] == "health" {
 		return CommandResult{Stdout: `{"ok":true,"pid":12,"port":10123}`}, nil
+	}
+	if len(args) >= 3 && args[0] == "provider" && args[1] == "list" {
+		payload := f.providersJSON
+		if payload == "" {
+			payload = `{"configured":[]}`
+		}
+		return CommandResult{Stdout: payload}, nil
+	}
+	if len(args) >= 3 && args[0] == "provider" && args[1] == "show" {
+		return CommandResult{Stdout: f.providerJSON}, nil
 	}
 	if len(args) >= 2 && args[0] == "account" && args[1] == "list" && f.accountErr != nil {
 		err := f.accountErr
@@ -87,16 +99,30 @@ func TestEnsureProviderDisablesLiveModels(t *testing.T) {
 	if err := manager.EnsureProvider(context.Background(), "az-account", "https://account.openai.azure.com/openai", "gpt-4o"); err != nil {
 		t.Fatal(err)
 	}
-	if len(runner.calls) != 3 {
-		t.Fatalf("got %d calls, want provider add, edit, and account readiness", len(runner.calls))
+	if len(runner.calls) != 4 {
+		t.Fatalf("got %d calls, want provider list, add, edit, and account readiness", len(runner.calls))
 	}
 	want := []string{"provider", "edit", "az-account", "--live-models", "off", "--json"}
-	if !slices.Equal(runner.calls[1].args, want) {
-		t.Fatalf("provider edit args = %v, want %v", runner.calls[1].args, want)
+	if !slices.Equal(runner.calls[2].args, want) {
+		t.Fatalf("provider edit args = %v, want %v", runner.calls[2].args, want)
 	}
 	want = []string{"account", "list", "az-account", "--json"}
-	if !slices.Equal(runner.calls[2].args, want) {
-		t.Fatalf("account readiness args = %v, want %v", runner.calls[2].args, want)
+	if !slices.Equal(runner.calls[3].args, want) {
+		t.Fatalf("account readiness args = %v, want %v", runner.calls[3].args, want)
+	}
+}
+
+func TestEnsureProviderSkipsMutationWhenConfigurationMatches(t *testing.T) {
+	runner := &fakeRunner{
+		providersJSON: `{"configured":[{"name":"az-account"}]}`,
+		providerJSON:  `{"name":"az-account","adapter":"azure-openai","baseUrl":"https://account.openai.azure.com/openai","defaultModel":"gpt-4o","liveModels":false}`,
+	}
+	manager := NewManagerWithRunner("C:\\Local", runner, nil)
+	if err := manager.EnsureProvider(context.Background(), "az-account", "https://account.openai.azure.com/openai", "gpt-4o"); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("calls = %v, want provider list and show only", runner.calls)
 	}
 }
 

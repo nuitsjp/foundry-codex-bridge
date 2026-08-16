@@ -69,3 +69,43 @@ func (a *App) OpenCodexState() (bridge.OpenCodexState, error) {
 func (a *App) Sync(request bridge.SyncRequest) bridge.SyncResult {
 	return a.service.Sync(a.ctx, request)
 }
+
+func (a *App) PreviewSync(request bridge.SyncRequest) bridge.SyncPreview {
+	return a.service.PreviewSync(a.ctx, request)
+}
+
+func (a *App) ManagedProviders() ([]bridge.ManagedProvider, error) {
+	return a.service.ManagedProviders()
+}
+
+func (a *App) PreviewDisconnect(resourceID string) bridge.DisconnectPreview {
+	return a.service.PreviewDisconnect(a.ctx, resourceID)
+}
+
+func (a *App) Disconnect(request bridge.DisconnectRequest) bridge.ActionResult {
+	return a.service.Disconnect(a.ctx, request)
+}
+
+func (a *App) StartOpenCodex() bridge.ActionResult {
+	return a.service.StartOpenCodex(a.ctx)
+}
+
+func (a *App) StopOpenCodex() bridge.ActionResult {
+	return a.service.StopOpenCodex(a.ctx)
+}
+
+func (a *App) RepairOpenCodex() bridge.ActionResult {
+	return a.service.RepairOpenCodex(a.ctx)
+}
+
+func (a *App) UpdateOpenCodex() bridge.ActionResult {
+	return a.service.UpdateOpenCodex(a.ctx)
+}
+
+func (a *App) ChangeOpenCodexPort(port int) bridge.ActionResult {
+	return a.service.ChangeOpenCodexPort(a.ctx, port)
+}
+
+func (a *App) RestartCodexCatalog() bridge.ActionResult {
+	return a.service.RestartCodexCatalog(a.ctx)
+}

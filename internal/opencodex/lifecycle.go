@@ -129,6 +129,36 @@ func (m *Manager) ProviderExists(ctx context.Context, providerID string) (bool, 
 }
 
 func (m *Manager) EnsureProvider(ctx context.Context, providerID, baseURL, model string) error {
+	providers, err := m.Providers(ctx)
+	if err != nil {
+		return err
+	}
+	found := false
+	for _, provider := range providers {
+		if provider.Name == providerID {
+			found = true
+			break
+		}
+	}
+	if found {
+		current, err := m.providerDetails(ctx, providerID)
+		if err != nil {
+			return err
+		}
+		if current.Adapter == "azure-openai" && current.BaseURL == baseURL && current.DefaultModel == model && !current.LiveModels {
+			return nil
+		}
+		if current.Adapter == "azure-openai" && current.BaseURL == baseURL && current.DefaultModel == model {
+			result, err := m.runner.Run(ctx, "", "provider", "edit", providerID, "--live-models", "off", "--json")
+			if err != nil {
+				return err
+			}
+			if result.Code != 0 {
+				return commandFailure("ocx provider edit", result)
+			}
+			return nil
+		}
+	}
 	result, err := m.runner.Run(ctx, "", "provider", "add", providerID,
 		"--adapter", "azure-openai",
 		"--base-url", baseURL,
@@ -148,6 +178,21 @@ func (m *Manager) EnsureProvider(ctx context.Context, providerID, baseURL, model
 		return commandFailure("ocx provider edit", result)
 	}
 	return m.waitForProviderAccountAPI(ctx, providerID)
+}
+
+func (m *Manager) providerDetails(ctx context.Context, providerID string) (Provider, error) {
+	result, err := m.runner.Run(ctx, "", "provider", "show", providerID, "--json")
+	if err != nil {
+		return Provider{}, err
+	}
+	if result.Code != 0 {
+		return Provider{}, commandFailure("ocx provider show", result)
+	}
+	var provider Provider
+	if err := json.Unmarshal([]byte(result.Stdout), &provider); err != nil {
+		return Provider{}, errors.New("ocx provider show returned invalid JSON")
+	}
+	return provider, nil
 }
 
 func (m *Manager) waitForProviderAccountAPI(ctx context.Context, providerID string) error {
