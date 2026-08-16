@@ -35,9 +35,9 @@ fake `ocx`を使うunit testでは、次を確認した。
 
 production buildを起動し、Azure CLIの共有ログイン、保存済みtenant、subscription、Azure Model Resourceを読み込んだConnect画面が空白化せず表示されることを確認した。確認後にプロセスを終了した。
 
-## 未実施の破壊的検証
+## 実環境の受け入れ確認
 
-利用中のopencodexとCodex環境を変更するため、次は自動実行していない。GUIから利用者が明示実行する受け入れ確認として残す。
+2026-08-16に、利用者がGUIから次の操作を実行し、すべて正常に完了することを確認した。
 
 - 2件目のBridge-managed Provider追加
 - 複数Deploymentの実Responses接続テスト
@@ -45,3 +45,5 @@ production buildを起動し、Azure CLIの共有ログイン、保存済みtena
 - opencodex port変更
 - opencodex latest更新
 - Codex再起動を伴うcatalog sync
+
+確認後のopencodexは`2.21.0`で、serviceはport `10100`でready状態だった。

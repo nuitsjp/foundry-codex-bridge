@@ -4,7 +4,7 @@ Microsoft Foundry / Azure OpenAI の deployment を opencodex 経由で Codex �
 
 ## 現在の状態
 
-Issue #2 の第1段階を実装済みで、Issue #3 の第2段階を開発中。Wails v2 のデスクトップ画面から Azure の既存 Model Resource と複数の Model Deployment を選択し、明示的な Sync 操作で opencodex の Provider、PrimaryKey、モデル、Codex カタログを順番に反映できる。
+Issue #2 の第1段階とIssue #3の第2段階を実装済み。Wails v2 のデスクトップ画面から Azure の既存 Model Resource と複数の Model Deployment を選択し、明示的な Sync 操作で opencodex の Provider、PrimaryKey、モデル、Codex カタログを順番に反映できる。
 
 Azure認証にはAzure CLIのログイン済み資格情報を使用する。Bridge独自のEntraアプリを利用者Tenantへ追加せず、Client IDやclient secretを要求しない。Bridgeの設定ファイルにはsecretを保存しない。Azure CLI、Node.js、npmは事前に導入しておく必要があり、Bridgeは自動導入しない。
 
