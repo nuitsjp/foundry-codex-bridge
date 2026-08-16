@@ -38,14 +38,30 @@ type ModelResource struct {
 }
 
 type Deployment struct {
-	ID                string `json:"id"`
-	Name              string `json:"name"`
-	ModelName         string `json:"modelName"`
-	ModelFormat       string `json:"modelFormat"`
-	ModelVersion      string `json:"modelVersion"`
-	SKU               string `json:"sku"`
-	Capacity          int32  `json:"capacity"`
-	ProvisioningState string `json:"provisioningState"`
+	ID                   string `json:"id"`
+	Name                 string `json:"name"`
+	ModelName            string `json:"modelName"`
+	ModelFormat          string `json:"modelFormat"`
+	ModelVersion         string `json:"modelVersion"`
+	SKU                  string `json:"sku"`
+	Capacity             int32  `json:"capacity"`
+	VersionUpgradeOption string `json:"versionUpgradeOption"`
+	ProvisioningState    string `json:"provisioningState"`
+}
+
+type CapacityConstraints struct {
+	Minimum       int32   `json:"minimum"`
+	Maximum       int32   `json:"maximum"`
+	Step          int32   `json:"step"`
+	Default       int32   `json:"default"`
+	AllowedValues []int32 `json:"allowedValues"`
+}
+
+type ModelSKU struct {
+	Name      string              `json:"name"`
+	UsageName string              `json:"usageName"`
+	Capacity  CapacityConstraints `json:"capacity"`
+	Unit      string              `json:"unit"`
 }
 
 type DeployableModel struct {
@@ -53,7 +69,23 @@ type DeployableModel struct {
 	Format         string            `json:"format"`
 	Version        string            `json:"version"`
 	Capabilities   map[string]string `json:"capabilities"`
+	SKUs           []ModelSKU        `json:"skus"`
+	MaxCapacity    int32             `json:"maxCapacity"`
 	CodexCandidate bool              `json:"codexCandidate"`
+}
+
+type DeploymentInput struct {
+	Name                 string  `json:"name"`
+	ModelName            string  `json:"modelName"`
+	ModelFormat          string  `json:"modelFormat"`
+	ModelVersion         string  `json:"modelVersion"`
+	SKU                  string  `json:"sku"`
+	Capacity             int32   `json:"capacity"`
+	VersionUpgradeOption *string `json:"versionUpgradeOption"`
+}
+
+type DeploymentWriter interface {
+	CreateOrUpdateDeployment(context.Context, string, string, string, string, DeploymentInput) (Deployment, error)
 }
 
 // KeyBundle never leaves the bridge service. In particular, it is not a Wails

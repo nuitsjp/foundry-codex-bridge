@@ -58,6 +58,14 @@ func (a *App) Models(tenantID, subscriptionID, resourceGroup, resourceName strin
 	return a.service.Models(a.ctx, tenantID, subscriptionID, resourceGroup, resourceName)
 }
 
+func (a *App) CreateDeployment(request bridge.DeploymentRequest) bridge.DeploymentOperationResult {
+	return a.service.CreateDeployment(a.ctx, request)
+}
+
+func (a *App) UpdateDeployment(request bridge.DeploymentRequest) bridge.DeploymentOperationResult {
+	return a.service.UpdateDeployment(a.ctx, request)
+}
+
 func (a *App) PrepareOpenCodex() (bridge.OpenCodexState, error) {
 	return a.service.PrepareOpenCodex(a.ctx)
 }

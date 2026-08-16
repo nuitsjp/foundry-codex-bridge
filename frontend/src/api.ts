@@ -27,6 +27,20 @@ export type Deployment = {
   sku: string;
   capacity: number;
   provisioningState: string;
+  versionUpgradeOption: string;
+};
+export type CapacityConstraints = {
+  minimum: number;
+  maximum: number;
+  step: number;
+  default: number;
+  allowedValues: number[];
+};
+export type ModelSKU = {
+  name: string;
+  usageName: string;
+  capacity: CapacityConstraints;
+  unit: string;
 };
 export type DeployableModel = {
   name: string;
@@ -34,6 +48,40 @@ export type DeployableModel = {
   version: string;
   capabilities: Record<string, string>;
   codexCandidate: boolean;
+  maxCapacity: number;
+  skus: ModelSKU[];
+};
+export type DeploymentRequest = {
+  tenantId: string;
+  subscriptionId: string;
+  resourceGroup: string;
+  resourceName: string;
+  deploymentName: string;
+  modelName: string;
+  modelFormat: string;
+  modelVersion: string;
+  sku: string;
+  capacity: number;
+  versionUpgradeOption?: string;
+  confirm: boolean;
+};
+export type DeploymentOperationError = {
+  class: string;
+  operation: string;
+  scope: string;
+  code: string;
+  requestId: string;
+  message: string;
+  retryable: boolean;
+};
+export type DeploymentOperationResult = {
+  ok: boolean;
+  operation: "create" | "update";
+  status: "running" | "succeeded" | "failed";
+  deployment?: Deployment;
+  error?: DeploymentOperationError;
+  message: string;
+  syncRequired: boolean;
 };
 export type OpenCodexState = {
   nodeInstalled: boolean;
@@ -115,6 +163,8 @@ type BoundApp = {
   ModelResources(tenantId: string, subscriptionId: string, resourceGroup: string): Promise<ModelResource[]>;
   Deployments(tenantId: string, subscriptionId: string, resourceGroup: string, resourceName: string): Promise<Deployment[]>;
   Models(tenantId: string, subscriptionId: string, resourceGroup: string, resourceName: string): Promise<DeployableModel[]>;
+  CreateDeployment(request: DeploymentRequest): Promise<DeploymentOperationResult>;
+  UpdateDeployment(request: DeploymentRequest): Promise<DeploymentOperationResult>;
   PrepareOpenCodex(): Promise<OpenCodexState>;
   OpenCodexState(): Promise<OpenCodexState>;
   PreviewSync(request: SyncRequest): Promise<SyncPreview>;
@@ -185,6 +235,8 @@ export const api = {
   resources: (tenantId: string, subscriptionId: string, resourceGroup: string) => boundApp().ModelResources(tenantId, subscriptionId, resourceGroup).then(normalizeList),
   deployments: (tenantId: string, subscriptionId: string, resourceGroup: string, resourceName: string) => boundApp().Deployments(tenantId, subscriptionId, resourceGroup, resourceName).then(normalizeList),
   models: (tenantId: string, subscriptionId: string, resourceGroup: string, resourceName: string) => boundApp().Models(tenantId, subscriptionId, resourceGroup, resourceName).then(normalizeList),
+  createDeployment: (request: DeploymentRequest) => boundApp().CreateDeployment(request),
+  updateDeployment: (request: DeploymentRequest) => boundApp().UpdateDeployment(request),
   prepareOpenCodex: () => boundApp().PrepareOpenCodex(),
   openCodexState: () => boundApp().OpenCodexState(),
   previewSync: (request: SyncRequest) => boundApp().PreviewSync(request).then(normalizeSyncPreview),

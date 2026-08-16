@@ -14,7 +14,33 @@ type ResourceGroup = azure.ResourceGroup
 type ModelResource = azure.ModelResource
 type Deployment = azure.Deployment
 type DeployableModel = azure.DeployableModel
+type OperationError = azure.OperationError
 type OpenCodexState = opencodex.State
+
+type DeploymentRequest struct {
+	TenantID             string `json:"tenantId"`
+	SubscriptionID       string `json:"subscriptionId"`
+	ResourceGroup        string `json:"resourceGroup"`
+	ResourceName         string `json:"resourceName"`
+	DeploymentName       string `json:"deploymentName"`
+	ModelName            string `json:"modelName"`
+	ModelFormat          string `json:"modelFormat"`
+	ModelVersion         string `json:"modelVersion"`
+	SKU                  string `json:"sku"`
+	Capacity             int32  `json:"capacity"`
+	VersionUpgradeOption string `json:"versionUpgradeOption"`
+	Confirm              bool   `json:"confirm"`
+}
+
+type DeploymentOperationResult struct {
+	OK           bool            `json:"ok"`
+	Operation    string          `json:"operation"`
+	Status       string          `json:"status"`
+	Deployment   *Deployment     `json:"deployment,omitempty"`
+	Error        *OperationError `json:"error,omitempty"`
+	Message      string          `json:"message"`
+	SyncRequired bool            `json:"syncRequired"`
+}
 
 type Selection struct {
 	TenantID              string   `json:"tenantId"`

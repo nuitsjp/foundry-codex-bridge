@@ -1,8 +1,10 @@
 package azure
 
 import (
+	"net/http"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 )
 
@@ -13,6 +15,19 @@ func TestClassifyErrorRecognizesAzureCLIAuthenticationFailure(t *testing.T) {
 	}
 	if classified.Message != "Azure sign-in is no longer valid. Sign in again." {
 		t.Fatalf("ClassifyError() message = %q", classified.Message)
+	}
+}
+
+func TestClassifyErrorMarksTransientAzureResponsesRetryable(t *testing.T) {
+	classified := ClassifyError(&azcore.ResponseError{
+		StatusCode: 429,
+		ErrorCode:  "TooManyRequests",
+		RawResponse: &http.Response{Header: http.Header{
+			"X-Ms-Request-Id": []string{"request-429"},
+		}},
+	}, "Create deployment", "rg/account/deployment")
+	if !classified.Retryable || classified.Code != "TooManyRequests" || classified.Scope != "rg/account/deployment" || classified.RequestID != "request-429" {
+		t.Fatalf("classified = %#v", classified)
 	}
 }
 

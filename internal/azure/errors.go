@@ -25,6 +25,7 @@ type OperationError struct {
 	Operation string     `json:"operation"`
 	Scope     string     `json:"scope"`
 	Code      string     `json:"code"`
+	Retryable bool       `json:"retryable"`
 	RequestID string     `json:"requestId"`
 	Message   string     `json:"message"`
 }
@@ -50,7 +51,10 @@ func ClassifyError(err error, operation, scope string) *OperationError {
 	var responseErr *azcore.ResponseError
 	if errors.As(err, &responseErr) {
 		result.Code = responseErr.ErrorCode
-		result.RequestID = responseErr.RawResponse.Header.Get("x-ms-request-id")
+		if responseErr.RawResponse != nil {
+			result.RequestID = responseErr.RawResponse.Header.Get("x-ms-request-id")
+		}
+		result.Retryable = responseErrorRetryable(responseErr)
 		switch responseErr.StatusCode {
 		case 401:
 			result.Class = ErrorAuthentication
@@ -61,8 +65,17 @@ func ClassifyError(err error, operation, scope string) *OperationError {
 		case 404:
 			result.Class = ErrorNotFound
 			result.Message = "The selected Azure resource was not found. Refresh the selection."
+		case 408, 429:
+			result.Message = "Azure temporarily rejected this operation. Retry it after the service becomes available."
 		default:
-			result.Message = "Azure returned an error for this operation."
+			if responseErr.StatusCode >= 500 {
+				result.Message = "Azure temporarily failed this operation. Retry it later."
+			} else if responseErr.StatusCode >= 400 && responseErr.StatusCode < 500 {
+				result.Class = ErrorValidation
+				result.Message = "Azure rejected the request as invalid. Review the selected resource and deployment."
+			} else {
+				result.Message = "Azure returned an error for this operation."
+			}
 		}
 	}
 	var authenticationErr *azidentity.AuthenticationFailedError
@@ -82,6 +95,20 @@ func ClassifyError(err error, operation, scope string) *OperationError {
 		result.Message = "Azure rejected the request as invalid. Review the selected resource and deployment."
 	}
 	return result
+}
+
+func responseErrorRetryable(err *azcore.ResponseError) bool {
+	if err == nil {
+		return false
+	}
+	if err.StatusCode == 408 || err.StatusCode == 429 || err.StatusCode >= 500 {
+		return true
+	}
+	code := strings.ToLower(err.ErrorCode)
+	return strings.Contains(code, "operationinprogress") ||
+		strings.Contains(code, "anotheroperationinprogress") ||
+		strings.Contains(code, "temporarilyunavailable") ||
+		strings.Contains(code, "throttl")
 }
 
 func RequireOperation(err error, operation, scope string) error {
