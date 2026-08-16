@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v4"
 )
 
 type fakeCLIRunner struct {
@@ -95,6 +97,52 @@ func TestAuthenticateDoesNotExposeAzureCLIErrorOutput(t *testing.T) {
 	if err == nil || strings.Contains(err.Error(), "access-token-value") {
 		t.Fatalf("Azure CLI error leaked command details: %v", err)
 	}
+}
+
+func TestCredentialOptionsForScopeUseEitherTenantOrSubscription(t *testing.T) {
+	tests := []struct {
+		name           string
+		tenantID       string
+		subscriptionID string
+		wantTenant     string
+		wantSub        string
+	}{
+		{name: "tenant scope", tenantID: " tenant-1 ", wantTenant: "tenant-1"},
+		{name: "subscription scope", tenantID: "tenant-1", subscriptionID: " subscription-1 ", wantSub: "subscription-1"},
+		{name: "default scope"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			options := credentialOptionsForScope(test.tenantID, test.subscriptionID)
+			if options.TenantID != test.wantTenant || options.Subscription != test.wantSub {
+				t.Fatalf("credential options = tenant %q, subscription %q; want tenant %q, subscription %q", options.TenantID, options.Subscription, test.wantTenant, test.wantSub)
+			}
+			if options.TenantID != "" && options.Subscription != "" {
+				t.Fatal("Azure CLI credential must not receive tenant and subscription together")
+			}
+		})
+	}
+}
+
+func TestModelResourceGroupsFilterAndDeduplicateAccounts(t *testing.T) {
+	accounts := []*armcognitiveservices.Account{
+		accountWithResourceID("AIServices", "/subscriptions/sub-1/resourceGroups/rg-zeta/providers/Microsoft.CognitiveServices/accounts/foundry-1"),
+		accountWithResourceID("OpenAI", "/subscriptions/sub-1/resourceGroups/rg-alpha/providers/Microsoft.CognitiveServices/accounts/openai-1"),
+		accountWithResourceID("OpenAI", "/subscriptions/sub-1/resourceGroups/RG-ZETA/providers/Microsoft.CognitiveServices/accounts/openai-2"),
+		accountWithResourceID("TextAnalytics", "/subscriptions/sub-1/resourceGroups/rg-unsupported/providers/Microsoft.CognitiveServices/accounts/language-1"),
+		accountWithResourceID("AIServices", "not-an-azure-resource-id"),
+		nil,
+	}
+
+	got := modelResourceGroups(accounts)
+	want := []ResourceGroup{{Name: "rg-alpha"}, {Name: "rg-zeta"}}
+	if !slices.Equal(got, want) {
+		t.Fatalf("modelResourceGroups() = %#v, want %#v", got, want)
+	}
+}
+
+func accountWithResourceID(kind, id string) *armcognitiveservices.Account {
+	return &armcognitiveservices.Account{Kind: &kind, ID: &id}
 }
 
 func TestLiveAzureCLIState(t *testing.T) {

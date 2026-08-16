@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import type { Snapshot } from "./api";
@@ -86,5 +86,46 @@ describe("App initial tenant selection", () => {
 
     expect(app.Subscriptions).toHaveBeenCalledWith("tenant-a");
     expect(screen.getByRole("heading", { name: "Azureへ接続" })).toBeInTheDocument();
+  });
+
+  it("shows progress in the stable footer status area", async () => {
+    const app = installBoundApp("");
+    app.Snapshot.mockReturnValue(new Promise(() => undefined));
+    render(<App />);
+
+    const progress = await screen.findByText("初期状態を読み込み中");
+    const status = screen.getByRole("status");
+    expect(status).toContainElement(progress);
+    expect(status).toHaveClass("activity-status");
+    expect(document.querySelector(".content")).not.toHaveTextContent("初期状態を読み込み中");
+    expect(screen.queryByText("Azure CLIをインストールしてからBridgeを再起動してください。")).not.toBeInTheDocument();
+    expect(screen.queryByText("Azure CLI未検出")).not.toBeInTheDocument();
+  });
+
+  it("does not report Azure CLI as missing when initial state loading fails", async () => {
+    const app = installBoundApp("");
+    app.Snapshot.mockRejectedValue(new Error("Snapshot failed"));
+    render(<App />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Snapshot failed");
+    expect(screen.getByText("Azure CLI状態取得失敗")).toBeInTheDocument();
+    expect(screen.queryByText("Azure CLI未検出")).not.toBeInTheDocument();
+    expect(screen.queryByText("Azure CLIをインストールしてからBridgeを再起動してください。")).not.toBeInTheDocument();
+  });
+
+  it("shows an empty state when the subscription has no Azure Model Resource", async () => {
+    const app = installBoundApp("");
+    app.Subscriptions.mockResolvedValue([{ id: "subscription-1", name: "Subscription 1", tenantId: "tenant-b", state: "Enabled" }]);
+    render(<App />);
+
+    await waitFor(() => expect(app.ResourceGroups).toHaveBeenCalledWith("tenant-b", "subscription-1"));
+    expect(await screen.findByText("このSubscriptionにはAzure Model Resourceがありません。")).toBeInTheDocument();
+  });
+
+  it("explains Windows approval before Sync", async () => {
+    await renderAndWaitForInitialLoad("");
+    fireEvent.click(screen.getByRole("button", { name: "Sync" }));
+
+    expect(screen.getByText("opencodex serviceが未登録の場合、初回のSyncでWindowsの管理者承認が表示されます。")).toBeInTheDocument();
   });
 });

@@ -74,6 +74,6 @@ Remove-Item Env:FOUNDRYCODEX_LIVE_AZURE_CLI
 4. opencodex タブで Node.js と npm の状態を確認し、必要なら利用者の承認で opencodex を導入する。
 5. Sync タブで Provider ID と対象 Deployment を確認し、Azure 料金が発生し得る接続テストに同意してから Sync を実行する。
 
-Sync は `ocx service install`、Provider 設定、PrimaryKey 登録、custom model、selected model、`ocx sync`、Responses endpoint の接続テストを順番に実行する。途中で失敗しても完了済みの操作は自動で巻き戻さないため、同じ選択で再実行して状態を収束させる。
+Sync は `ocx service install`、Provider 設定、PrimaryKey 登録、selected model、custom model、`ocx sync`、Responses endpoint の接続テストを順番に実行する。Windowsでserviceが未登録または修復を要する場合はUAC確認画面を表示し、補助コンソールは表示しない。途中で失敗しても完了済みの操作は自動で巻き戻さないため、同じ選択で再実行して状態を収束させる。
 
 API key、OAuth token、refresh tokenはBridgeの画面、ログ、Wailsのエラー、settings.jsonに出さない。Azure CLIの認証キャッシュはAzure CLIだけに管理させる。実機検証で使用した資格情報やAzureの値をコミットしない。

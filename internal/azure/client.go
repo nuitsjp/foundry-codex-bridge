@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sort"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v4"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources/v4"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/subscription/armsubscription"
 )
 
@@ -63,11 +64,15 @@ func (c *SDKClient) credentialForScope(tenantID, subscriptionID string) (*aziden
 	if err := c.ready(); err != nil {
 		return nil, err
 	}
-	tenantID = strings.TrimSpace(tenantID)
-	return azidentity.NewAzureCLICredential(&azidentity.AzureCLICredentialOptions{
-		TenantID:     tenantID,
-		Subscription: strings.TrimSpace(subscriptionID),
-	})
+	return azidentity.NewAzureCLICredential(credentialOptionsForScope(tenantID, subscriptionID))
+}
+
+func credentialOptionsForScope(tenantID, subscriptionID string) *azidentity.AzureCLICredentialOptions {
+	subscriptionID = strings.TrimSpace(subscriptionID)
+	if subscriptionID != "" {
+		return &azidentity.AzureCLICredentialOptions{Subscription: subscriptionID}
+	}
+	return &azidentity.AzureCLICredentialOptions{TenantID: strings.TrimSpace(tenantID)}
 }
 
 func (c *SDKClient) readCLIState(ctx context.Context) AuthState {
@@ -160,22 +165,20 @@ func (c *SDKClient) ResourceGroups(ctx context.Context, tenantID, subscriptionID
 	if err != nil {
 		return nil, err
 	}
-	client, err := armresources.NewResourceGroupsClient(subscriptionID, credential, nil)
+	client, err := armcognitiveservices.NewAccountsClient(subscriptionID, credential, nil)
 	if err != nil {
 		return nil, err
 	}
 	pager := client.NewListPager(nil)
-	var result []ResourceGroup
+	var accounts []*armcognitiveservices.Account
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			return nil, RequireOperation(err, "List resource groups", subscriptionID)
+			return nil, RequireOperation(err, "List Azure Model Resources", subscriptionID)
 		}
-		for _, item := range page.Value {
-			result = append(result, ResourceGroup{Name: stringValue(item.Name)})
-		}
+		accounts = append(accounts, page.Value...)
 	}
-	return result, nil
+	return modelResourceGroups(accounts), nil
 }
 
 func (c *SDKClient) ModelResources(ctx context.Context, tenantID, subscriptionID, resourceGroup string) ([]ModelResource, error) {
@@ -303,6 +306,32 @@ func (c *SDKClient) ListKeys(ctx context.Context, tenantID, subscriptionID, reso
 
 func isSupportedKind(kind string) bool {
 	return strings.EqualFold(kind, "AIServices") || strings.EqualFold(kind, "OpenAI")
+}
+
+func modelResourceGroups(accounts []*armcognitiveservices.Account) []ResourceGroup {
+	groupsByName := make(map[string]ResourceGroup)
+	for _, account := range accounts {
+		if account == nil || !isSupportedKind(stringValue(account.Kind)) {
+			continue
+		}
+		resourceID, err := arm.ParseResourceID(stringValue(account.ID))
+		if err != nil || resourceID.ResourceGroupName == "" {
+			continue
+		}
+		key := strings.ToLower(resourceID.ResourceGroupName)
+		if _, exists := groupsByName[key]; !exists {
+			groupsByName[key] = ResourceGroup{Name: resourceID.ResourceGroupName}
+		}
+	}
+
+	result := make([]ResourceGroup, 0, len(groupsByName))
+	for _, group := range groupsByName {
+		result = append(result, group)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return strings.ToLower(result[i].Name) < strings.ToLower(result[j].Name)
+	})
+	return result
 }
 
 func isCodexCandidate(format string, capabilities map[string]string) bool {

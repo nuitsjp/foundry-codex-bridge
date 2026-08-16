@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 )
 
 type ErrorClass string
@@ -63,6 +64,12 @@ func ClassifyError(err error, operation, scope string) *OperationError {
 		default:
 			result.Message = "Azure returned an error for this operation."
 		}
+	}
+	var authenticationErr *azidentity.AuthenticationFailedError
+	if errors.As(err, &authenticationErr) {
+		result.Class = ErrorAuthentication
+		result.Message = "Azure sign-in is no longer valid. Sign in again."
+		return result
 	}
 
 	text := strings.ToLower(err.Error())

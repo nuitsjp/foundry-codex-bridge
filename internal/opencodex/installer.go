@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/nuitsjp/foundry-codex-bridge/internal/platform"
 )
 
 var ErrNodePrerequisite = errors.New("Node.js 18 or newer and npm are required")
@@ -80,7 +82,9 @@ func commandVersion(ctx context.Context, name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	output, err := exec.CommandContext(ctx, path, "--version").Output()
+	command := exec.CommandContext(ctx, path, "--version")
+	platform.HideCommandWindow(command)
+	output, err := command.Output()
 	if err != nil {
 		return "", err
 	}

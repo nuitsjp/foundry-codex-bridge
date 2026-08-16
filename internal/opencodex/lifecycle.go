@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/nuitsjp/foundry-codex-bridge/internal/platform"
 )
 
 type Manager struct {
@@ -86,12 +88,18 @@ func (m *Manager) EnsureService(ctx context.Context) error {
 	if status.Startup.ServiceInstalled && !status.Startup.ServiceConflict {
 		command = "repair"
 	}
-	result, err = m.runner.Run(ctx, "", "service", command)
+	if serviceRunner, ok := m.runner.(interface {
+		RunServiceCommand(context.Context, string) (CommandResult, error)
+	}); ok {
+		result, err = serviceRunner.RunServiceCommand(ctx, command)
+	} else {
+		result, err = m.runner.Run(ctx, "", "service", command)
+	}
 	if err != nil {
-		return err
+		return serviceCommandError("ocx service "+command, result, err)
 	}
 	if result.Code != 0 {
-		return commandFailure("ocx service "+command, result)
+		return serviceCommandError("ocx service "+command, result, nil)
 	}
 	return nil
 }
@@ -139,7 +147,31 @@ func (m *Manager) EnsureProvider(ctx context.Context, providerID, baseURL, model
 	if result.Code != 0 {
 		return commandFailure("ocx provider edit", result)
 	}
-	return nil
+	return m.waitForProviderAccountAPI(ctx, providerID)
+}
+
+func (m *Manager) waitForProviderAccountAPI(ctx context.Context, providerID string) error {
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		result, err := m.runner.Run(ctx, "", "account", "list", providerID, "--json")
+		if err == nil && result.Code == 0 {
+			return nil
+		}
+		detail := strings.ToLower(strings.Join([]string{result.Stdout, result.Stderr, errorMessage(err)}, "\n"))
+		if !strings.Contains(detail, "unknown provider") || time.Now().After(deadline) {
+			if err != nil {
+				return err
+			}
+			return commandFailure("ocx account list", result)
+		}
+		timer := time.NewTimer(100 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
 }
 
 func (m *Manager) AddPrimaryKey(ctx context.Context, providerID, primaryKey string) error {
@@ -267,13 +299,47 @@ func (m *Manager) health(ctx context.Context) (Health, error) {
 
 func (m *Manager) runnerPath() (string, error) {
 	if local, ok := m.runner.(*LocalRunner); ok {
-		return local.commandPath()
+		spec, err := local.command()
+		return spec.path, err
 	}
 	return "ocx", nil
 }
 
 func commandFailure(command string, result CommandResult) error {
 	return commandFailureWithSecret(command, result, "")
+}
+
+func serviceCommandError(command string, result CommandResult, runErr error) error {
+	detail := strings.ToLower(strings.Join([]string{
+		result.Stderr,
+		result.Stdout,
+		errorMessage(runErr),
+		fmt.Sprintf("exit code %d", result.Code),
+	}, "\n"))
+	for _, marker := range []string{
+		"exit code 199",
+		"exit code 1223",
+		"code 1223",
+		"ocx_error_code=windows_schtasks_create_access_denied",
+		"windows access denied while running task scheduler",
+		"administrator approval was required",
+		"uac prompt was cancelled",
+	} {
+		if strings.Contains(detail, marker) {
+			return errors.New("opencodex serviceの登録にWindowsの管理者承認が必要です。Syncを再実行し、表示されるユーザー アカウント制御（UAC）を承認してください。承認画面が表示されない場合は、組織のUACまたはTask Schedulerポリシーを確認してください")
+		}
+	}
+	if runErr != nil {
+		return runErr
+	}
+	return commandFailure(command, result)
+}
+
+func errorMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 func commandFailureWithSecret(command string, result CommandResult, secret string) error {
@@ -290,6 +356,7 @@ func commandFailureWithSecret(command string, result CommandResult, secret strin
 
 func runCommand(ctx context.Context, path, stdin string, args ...string) (CommandResult, error) {
 	command := exec.CommandContext(ctx, path, args...)
+	platform.HideCommandWindow(command)
 	if stdin != "" {
 		command.Stdin = strings.NewReader(stdin)
 	}

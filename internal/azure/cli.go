@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/nuitsjp/foundry-codex-bridge/internal/platform"
 )
 
 var ErrAzureCLINotInstalled = errors.New("Azure CLI is not installed")
@@ -27,6 +29,7 @@ func (localCLIRunner) Run(ctx context.Context, args ...string) (CLIResult, error
 		return CLIResult{}, ErrAzureCLINotInstalled
 	}
 	command := exec.CommandContext(ctx, path, args...)
+	platform.HideCommandWindow(command)
 	command.Env = append(os.Environ(), "AZURE_CORE_LOGIN_EXPERIENCE_V2=off")
 	var stdout, stderr strings.Builder
 	command.Stdout = &stdout

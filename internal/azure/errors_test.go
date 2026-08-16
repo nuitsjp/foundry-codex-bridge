@@ -1,6 +1,20 @@
 package azure
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+)
+
+func TestClassifyErrorRecognizesAzureCLIAuthenticationFailure(t *testing.T) {
+	classified := ClassifyError(&azidentity.AuthenticationFailedError{}, "List resource groups", "subscription")
+	if classified.Class != ErrorAuthentication {
+		t.Fatalf("ClassifyError() class = %q, want %q", classified.Class, ErrorAuthentication)
+	}
+	if classified.Message != "Azure sign-in is no longer valid. Sign in again." {
+		t.Fatalf("ClassifyError() message = %q", classified.Message)
+	}
+}
 
 func TestCodexCandidateUsesFormatSpecificCapability(t *testing.T) {
 	tests := []struct {

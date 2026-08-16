@@ -183,6 +183,10 @@ func TestSyncConvergesWithoutPersistingKey(t *testing.T) {
 	if settings.value.Selection.ProviderID != "az-account" {
 		t.Fatalf("provider mapping was not saved")
 	}
+	wantCalls := []string{"service", "provider", "key", "selected", "model", "catalog", "connection"}
+	if !reflect.DeepEqual(ocx.called, wantCalls) {
+		t.Fatalf("stages called = %v, want %v", ocx.called, wantCalls)
+	}
 	encoded, _ := json.Marshal(result)
 	if strings.Contains(string(encoded), "primary-secret") {
 		t.Fatalf("Sync result contains the secret")

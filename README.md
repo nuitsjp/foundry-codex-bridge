@@ -50,11 +50,13 @@ mise run build
 - local authentication が無効なリソースは、API key を使う現行 opencodex アダプターの制約により Sync 対象外とする。
 - 起動時は読み取り専用で、Provider、Catalog、service、接続テストを自動変更しない。
 - Sync の接続テストは実際の Azure リクエストになるため、画面上の確認が必要である。
+- 初回のservice登録または修復ではWindowsのUAC確認が表示される。Bridgeは公開`ocx service`を昇格起動し、Task Schedulerの管理はopencodexに委ねる。
 
 ## 設計ドキュメント
 
 - [アーキテクチャ](./docs/architecture.md)
 - [リポジトリ構成](./docs/repository-structure.md)
 - [開発手順](./docs/development.md)
+- [第1段階 実機検証記録](./docs/phase-1-validation.md)
 - [用語集](./CONTEXT.md)
 - [ADR](./docs/adr/)

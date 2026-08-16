@@ -11,6 +11,7 @@ Wails v2 の標準構成を起点にし、Go 側は外部境界ごとの小さ�
 │   ├── adr/
 │   ├── architecture.md
 │   ├── development.md
+│   ├── phase-1-validation.md
 │   └── repository-structure.md
 ├── frontend/
 │   ├── src/
@@ -46,7 +47,9 @@ Wails v2 の標準構成を起点にし、Go 側は外部境界ごとの小さ�
 │   │   └── types.go
 │   └── platform/
 │       ├── paths_other.go
-│       └── paths_windows.go
+│       ├── paths_windows.go
+│       ├── process_other.go
+│       └── process_windows.go
 ├── scripts/
 │   ├── doctor.ps1
 │   └── init.ps1
@@ -76,7 +79,7 @@ Wails v2 の標準構成を起点にし、Go 側は外部境界ごとの小さ�
 - `internal/azure`: Azure CLI実行境界、`AzureCLICredential`を使うAzure SDK client、Azure DTO mapping、認可エラーの分類。
 - `internal/opencodex`: opencodex のインストールと、公開 `ocx` CLI を使ったプロセス制御、health、Provider 管理。構造化出力があるコマンドは JSON を解析する。
 - `internal/bridge`: Azure と opencodex をまたぐアプリケーション use case。
-- `internal/platform`: OS ごとのユーザー設定ディレクトリ解決。
+- `internal/platform`: OS ごとのユーザー設定ディレクトリ解決と、WindowsのCLI非表示起動・UAC昇格起動。
 
 ## Frontend
 

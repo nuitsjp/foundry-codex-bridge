@@ -11,6 +11,7 @@ import (
 type fakeRunner struct {
 	calls      []fakeCall
 	statusJSON string
+	accountErr error
 }
 
 type fakeCall struct {
@@ -25,6 +26,11 @@ func (f *fakeRunner) Run(_ context.Context, stdin string, args ...string) (Comma
 	}
 	if len(args) >= 1 && args[0] == "health" {
 		return CommandResult{Stdout: `{"ok":true,"pid":12,"port":10123}`}, nil
+	}
+	if len(args) >= 2 && args[0] == "account" && args[1] == "list" && f.accountErr != nil {
+		err := f.accountErr
+		f.accountErr = nil
+		return CommandResult{Stderr: err.Error(), Code: 1}, err
 	}
 	if len(args) >= 2 && args[0] == "models" && args[1] == "list-custom" {
 		return CommandResult{Stdout: `[]`}, nil
@@ -81,12 +87,33 @@ func TestEnsureProviderDisablesLiveModels(t *testing.T) {
 	if err := manager.EnsureProvider(context.Background(), "az-account", "https://account.openai.azure.com/openai", "gpt-4o"); err != nil {
 		t.Fatal(err)
 	}
-	if len(runner.calls) != 2 {
-		t.Fatalf("got %d calls, want provider add and edit", len(runner.calls))
+	if len(runner.calls) != 3 {
+		t.Fatalf("got %d calls, want provider add, edit, and account readiness", len(runner.calls))
 	}
 	want := []string{"provider", "edit", "az-account", "--live-models", "off", "--json"}
 	if !slices.Equal(runner.calls[1].args, want) {
 		t.Fatalf("provider edit args = %v, want %v", runner.calls[1].args, want)
+	}
+	want = []string{"account", "list", "az-account", "--json"}
+	if !slices.Equal(runner.calls[2].args, want) {
+		t.Fatalf("account readiness args = %v, want %v", runner.calls[2].args, want)
+	}
+}
+
+func TestEnsureProviderWaitsUntilLiveProxyRecognizesProvider(t *testing.T) {
+	runner := &fakeRunner{accountErr: errors.New("Error: unknown provider")}
+	manager := NewManagerWithRunner("C:\\Local", runner, nil)
+	if err := manager.EnsureProvider(context.Background(), "az-account", "https://account.openai.azure.com/openai", "gpt-4o"); err != nil {
+		t.Fatal(err)
+	}
+	accountCalls := 0
+	for _, call := range runner.calls {
+		if len(call.args) >= 2 && call.args[0] == "account" && call.args[1] == "list" {
+			accountCalls++
+		}
+	}
+	if accountCalls != 2 {
+		t.Fatalf("account readiness calls = %d, want 2", accountCalls)
 	}
 }
 
@@ -113,6 +140,35 @@ func TestEnsureServiceUsesStatusToChooseAction(t *testing.T) {
 				t.Fatalf("service args = %v, want %v", runner.calls[1].args, test.want)
 			}
 		})
+	}
+}
+
+func TestServiceCommandErrorExplainsWindowsApprovalFailure(t *testing.T) {
+	tests := []struct {
+		name   string
+		result CommandResult
+		err    error
+	}{
+		{name: "truncated UAC exit code", err: errors.New("exit status 1: Background service install failed with exit code 199")},
+		{name: "Windows cancellation code", result: CommandResult{Stderr: "Background service install failed with exit code 1223"}},
+		{name: "direct Windows cancellation code", err: errors.New("Windows elevation failed (code 1223): The operation was canceled by the user")},
+		{name: "elevated process cancellation code", result: CommandResult{Code: 1223}},
+		{name: "Task Scheduler marker", result: CommandResult{Stderr: "OCX_ERROR_CODE=WINDOWS_SCHTASKS_CREATE_ACCESS_DENIED"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := serviceCommandError("ocx service install", test.result, test.err)
+			if !strings.Contains(err.Error(), "ユーザー アカウント制御（UAC）を承認") {
+				t.Fatalf("serviceCommandError() = %q", err)
+			}
+		})
+	}
+}
+
+func TestServiceCommandErrorPreservesUnclassifiedFailure(t *testing.T) {
+	want := errors.New("unclassified failure")
+	if got := serviceCommandError("ocx service install", CommandResult{}, want); !errors.Is(got, want) {
+		t.Fatalf("serviceCommandError() = %v, want %v", got, want)
 	}
 }
 

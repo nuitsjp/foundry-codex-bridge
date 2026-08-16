@@ -65,11 +65,11 @@ flowchart LR
 - GUI ではアカウント、tenant、subscription の順に1つずつ選択し、選択中の tenant の認証コンテキストだけを使用する。
 - `kind = AIServices` の Microsoft Foundry リソースと `kind = OpenAI` のスタンドアロン Azure OpenAI リソースを検出し、Azure Model Resource としてユーザーに選択させる。
 - Model Deployment、Deployable Model、SKU、Capacity、プロビジョニング状態を表示する。
-- GUI 操作から Model Deployment を作成または更新する。
+- 第3段階では、GUI 操作から Model Deployment を作成または更新する。
 - opencodex へ適用するタイミングで、選択中の Azure Model Resource の endpoint と PrimaryKey を取得する。SecondaryKey は opencodex へ渡さない。
 - opencodex のインストール、起動、停止、状態確認を行う。
 - GUI から opencodex を更新できるようにする。
-- opencodex の常駐は `ocx service` に委ね、Bridge は Task Scheduler や昇格処理を直接実装しない。
+- opencodex の常駐は `ocx service` に委ねる。WindowsではBridgeが公開`ocx service`コマンドをUAC昇格起動するが、Task Schedulerの登録内容、安全確認、競合判定、ロールバックはopencodexに委ねる。
 - Azure Model Resource の OpenAI v1 互換 endpoint 用に opencodex Provider を追加または更新する。
 - Azure Model Resource ごとに Bridge-managed Provider を1つ作成し、複数リソースの Provider を同時に保持する。
 - GUI から Bridge-managed Provider を opencodex から解除する。Azure リソースは削除しない。
@@ -204,7 +204,7 @@ flowchart LR
 2. Node.js または npm が存在しない、あるいは opencodex の要件を満たさない場合、Bridge は処理を止め、GUI でユーザーに Node.js のインストールまたは更新を求める。Bridge 自身は Node.js をインストールしない。
 3. Bridge は `PATH` 上の `ocx` を探索し、既存インストールがあればバージョンを固定せずに利用する。
 4. `ocx` が存在しない場合、Bridge はシステムの npm を使い、`%LOCALAPPDATA%\FoundryCodexBridge\opencodex` 配下へ `@bitkyc08/opencodex@latest` をユーザー単位でインストールする。グローバル npm 環境と `PATH` は変更しない。
-5. 初回 Sync では `ocx service install` を実行し、opencodex 標準の Windows Task Scheduler バックグラウンドサービスを登録・起動する。Task Scheduler 登録、必要な昇格、安全確認、ロールバックは opencodex に委ね、Bridge は直接扱わない。
+5. 初回 Sync では、BridgeがWindowsのUAC確認を表示して公開`ocx service install`を昇格起動し、opencodex標準のTask Schedulerバックグラウンドサービスを登録・起動する。BridgeはTask Schedulerを直接操作せず、登録内容、安全確認、競合判定、ロールバックをopencodexに委ねる。
 6. 以後の起動、停止、状態確認、修復は `ocx service` と `ocx health --json` で行う。Codex shim は使用しない。opencodex の既定希望 port は `10100` だが、Bridge は `health` / `status` が返す実際の port を使用する。
 7. Bridge は公開 `ocx` CLI で、選択中の Azure Model Resource に対応する Bridge-managed Provider を追加または更新する。API key はコマンドライン引数に含めず、`ocx account add-key` の標準入力へ渡す。
    - adapter: `azure-openai`
@@ -214,12 +214,13 @@ flowchart LR
    - live models: off。Azure のモデル列挙は Bridge が ARM から行う。
    - custom models: 選択した Model Deployment name を `ocx models add` で登録する。
    - selected models: 対応する Azure Model Resource から opencodex に公開する deployment names
-8. Bridge は `ocx models list-custom --json` の結果と選択内容を比較し、Bridge-managed Provider に属するカスタムモデルを `ocx models add` / `ocx models remove --yes` で同期する。
-9. Bridge は `ocx models selected <provider-id> --set <deployment-names> --json` と `ocx sync` を実行する。
-10. catalog sync 後、Bridge は選択した各 Model Deployment に対して opencodex の公開 Responses endpoint 経由で固定の最小リクエストを順番に送り、実接続を検証する。model には `<provider-id>/<deployment-name>`、入力には固定文字列を使い、`stream: false`、`store: false`、小さい `max_output_tokens` を指定する。応答本文の文言は判定せず、Responses API として正常な応答を受け取れたことを成功条件とする。このリクエストには Azure の利用料金が発生し得ることを Sync 実行前の画面に表示する。
-11. 接続テストの失敗は Provider 設定や catalog sync をロールバックする条件にしない。GUI に Model Deployment ごとの成功・失敗と Azure から返されたエラーを表示する。
-12. 通常の Sync では Codex App を自動停止しない。opencodex が既存 app-server のカタログ保持を報告した場合だけ、GUI に「Codex を再起動して反映」を表示する。
-13. ユーザーが注意確認後に明示実行した場合だけ、Bridge は `ocx sync --restart-codex` を実行する。
+8. Bridge は `ocx models selected <provider-id> --set <deployment-names> --json` を実行する。
+9. Bridge は `ocx models list-custom --json` の結果と選択内容を比較し、Bridge-managed Provider に属するカスタムモデルを `ocx models add` / `ocx models remove --yes` で同期する。現行opencodexではcustom model追加がディスク設定を更新するため、稼働中設定を保存するselected model変更より後に実行し、古い設定による上書きを防ぐ。
+10. Bridge は `ocx sync` を実行する。
+11. catalog sync 後、Bridge は選択した各 Model Deployment に対して opencodex の公開 Responses endpoint 経由で固定の最小リクエストを順番に送り、実接続を検証する。model には `<provider-id>/<deployment-name>`、入力には固定文字列を使い、`stream: false`、`store: false`、小さい `max_output_tokens` を指定する。応答本文の文言は判定せず、Responses API として正常な応答を受け取れたことを成功条件とする。このリクエストには Azure の利用料金が発生し得ることを Sync 実行前の画面に表示する。
+12. 接続テストの失敗は Provider 設定や catalog sync をロールバックする条件にしない。GUI に Model Deployment ごとの成功・失敗と Azure から返されたエラーを表示する。
+13. 通常の Sync では Codex App を自動停止しない。opencodex が既存 app-server のカタログ保持を報告した場合だけ、GUI に「Codex を再起動して反映」を表示する。
+14. ユーザーが注意確認後に明示実行した場合だけ、Bridge は `ocx sync --restart-codex` を実行する。
 
 ### Sync の失敗と再実行
 
@@ -302,7 +303,7 @@ Bridge の設定に保存してはいけないもの:
 - Azure Government、Azure China、Azure Stack など Public Azure 以外のクラウドには対応しない。
 - BridgeはAzure CLIを同梱、ダウンロード、インストール、更新しない。
 - Bridge は Node.js をダウンロード、インストール、更新しない。
-- Bridge は Windows Task Scheduler を直接操作せず、独自のサービス管理や昇格処理を実装しない。
+- Bridge は Windows Task Scheduler を直接操作せず、独自のサービス管理を実装しない。公開`ocx service`コマンドのUAC昇格起動だけをWindows固有処理として持つ。
 - Codex shim は使用しない。
 - Bridge から Codex App 設定を直接編集しない。
 - Azure RBAC のロール割り当てを作成・更新しない。

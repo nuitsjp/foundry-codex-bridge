@@ -192,13 +192,15 @@ func (s *Service) Sync(ctx context.Context, request SyncRequest) SyncResult {
 	}
 	primaryKey = ""
 
-	if err := s.runStage(&result, "model", "Register selected custom model", func() error {
-		return s.opencodex.EnsureCustomModel(ctx, providerID, request.DeploymentName)
+	if err := s.runStage(&result, "selected", "Select model in opencodex", func() error {
+		return s.opencodex.SelectModel(ctx, providerID, request.DeploymentName)
 	}); err != nil {
 		return result
 	}
-	if err := s.runStage(&result, "selected", "Select model in opencodex", func() error {
-		return s.opencodex.SelectModel(ctx, providerID, request.DeploymentName)
+	// models add writes the disk config directly. Keep it after live-proxy mutations so
+	// a stale proxy snapshot cannot overwrite the newly registered custom model.
+	if err := s.runStage(&result, "model", "Register selected custom model", func() error {
+		return s.opencodex.EnsureCustomModel(ctx, providerID, request.DeploymentName)
 	}); err != nil {
 		return result
 	}
