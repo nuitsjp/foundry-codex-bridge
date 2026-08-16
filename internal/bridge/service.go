@@ -31,27 +31,43 @@ func (s *Service) SignIn(ctx context.Context) (AuthState, error) {
 }
 
 func (s *Service) Tenants(ctx context.Context) ([]Tenant, error) {
-	return s.azure.Tenants(s.context(ctx))
+	values, err := s.azure.Tenants(s.context(ctx))
+	return normalizeListResult(values, err)
 }
 
 func (s *Service) Subscriptions(ctx context.Context, tenantID string) ([]Subscription, error) {
-	return s.azure.Subscriptions(s.context(ctx), tenantID)
+	values, err := s.azure.Subscriptions(s.context(ctx), tenantID)
+	return normalizeListResult(values, err)
 }
 
 func (s *Service) ResourceGroups(ctx context.Context, tenantID, subscriptionID string) ([]ResourceGroup, error) {
-	return s.azure.ResourceGroups(s.context(ctx), tenantID, subscriptionID)
+	values, err := s.azure.ResourceGroups(s.context(ctx), tenantID, subscriptionID)
+	return normalizeListResult(values, err)
 }
 
 func (s *Service) ModelResources(ctx context.Context, tenantID, subscriptionID, resourceGroup string) ([]ModelResource, error) {
-	return s.azure.ModelResources(s.context(ctx), tenantID, subscriptionID, resourceGroup)
+	values, err := s.azure.ModelResources(s.context(ctx), tenantID, subscriptionID, resourceGroup)
+	return normalizeListResult(values, err)
 }
 
 func (s *Service) Deployments(ctx context.Context, tenantID, subscriptionID, resourceGroup, resourceName string) ([]Deployment, error) {
-	return s.azure.Deployments(s.context(ctx), tenantID, subscriptionID, resourceGroup, resourceName)
+	values, err := s.azure.Deployments(s.context(ctx), tenantID, subscriptionID, resourceGroup, resourceName)
+	return normalizeListResult(values, err)
 }
 
 func (s *Service) Models(ctx context.Context, tenantID, subscriptionID, resourceGroup, resourceName string) ([]DeployableModel, error) {
-	return s.azure.Models(s.context(ctx), tenantID, subscriptionID, resourceGroup, resourceName)
+	values, err := s.azure.Models(s.context(ctx), tenantID, subscriptionID, resourceGroup, resourceName)
+	return normalizeListResult(values, err)
+}
+
+func normalizeListResult[T any](values []T, err error) ([]T, error) {
+	if err != nil {
+		return nil, err
+	}
+	if values == nil {
+		return []T{}, nil
+	}
+	return values, nil
 }
 
 func (s *Service) PrepareOpenCodex(ctx context.Context) (OpenCodexState, error) {

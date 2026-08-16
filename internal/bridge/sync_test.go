@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -16,6 +17,7 @@ type fakeAzure struct {
 	deployments []azure.Deployment
 	models      []azure.DeployableModel
 	keys        azure.KeyBundle
+	nilLists    bool
 }
 
 func (f *fakeAzure) Authenticate(context.Context) (azure.AuthState, error) {
@@ -24,20 +26,40 @@ func (f *fakeAzure) Authenticate(context.Context) (azure.AuthState, error) {
 func (f *fakeAzure) AuthState(context.Context) azure.AuthState {
 	return azure.AuthState{CLIInstalled: true, SignedIn: true}
 }
-func (f *fakeAzure) Tenants(context.Context) ([]azure.Tenant, error) { return nil, nil }
+func (f *fakeAzure) Tenants(context.Context) ([]azure.Tenant, error) {
+	if f.nilLists {
+		return nil, nil
+	}
+	return []azure.Tenant{{ID: "tenant"}}, nil
+}
 func (f *fakeAzure) Subscriptions(context.Context, string) ([]azure.Subscription, error) {
+	if f.nilLists {
+		return nil, nil
+	}
 	return nil, nil
 }
 func (f *fakeAzure) ResourceGroups(context.Context, string, string) ([]azure.ResourceGroup, error) {
+	if f.nilLists {
+		return nil, nil
+	}
 	return nil, nil
 }
 func (f *fakeAzure) ModelResources(context.Context, string, string, string) ([]azure.ModelResource, error) {
+	if f.nilLists {
+		return nil, nil
+	}
 	return []azure.ModelResource{f.resource}, nil
 }
 func (f *fakeAzure) Deployments(context.Context, string, string, string, string) ([]azure.Deployment, error) {
+	if f.nilLists {
+		return nil, nil
+	}
 	return f.deployments, nil
 }
 func (f *fakeAzure) Models(context.Context, string, string, string, string) ([]azure.DeployableModel, error) {
+	if f.nilLists {
+		return nil, nil
+	}
 	return f.models, nil
 }
 func (f *fakeAzure) GetModelResource(context.Context, string, string, string, string) (azure.ModelResource, error) {
@@ -102,6 +124,47 @@ func newFakeAzure() *fakeAzure {
 		deployments: []azure.Deployment{{Name: "gpt-4o", ModelName: "gpt-4o", ModelFormat: "OpenAI", ModelVersion: "2024-11-20"}},
 		models:      []azure.DeployableModel{{Name: "gpt-4o", Format: "OpenAI", Version: "2024-11-20", CodexCandidate: true}},
 		keys:        azure.KeyBundle{PrimaryKey: "primary-secret"},
+	}
+}
+
+func TestListAPIsNormalizeNilSlicesAtBridgeBoundary(t *testing.T) {
+	service := NewService(&fakeAzure{nilLists: true}, &fakeOpenCodex{}, &fakeSettings{})
+	checks := []struct {
+		name string
+		call func() (any, error)
+	}{
+		{name: "Tenants", call: func() (any, error) { return service.Tenants(context.Background()) }},
+		{name: "Subscriptions", call: func() (any, error) { return service.Subscriptions(context.Background(), "tenant") }},
+		{name: "ResourceGroups", call: func() (any, error) { return service.ResourceGroups(context.Background(), "tenant", "subscription") }},
+		{name: "ModelResources", call: func() (any, error) {
+			return service.ModelResources(context.Background(), "tenant", "subscription", "group")
+		}},
+		{name: "Deployments", call: func() (any, error) {
+			return service.Deployments(context.Background(), "tenant", "subscription", "group", "resource")
+		}},
+		{name: "Models", call: func() (any, error) {
+			return service.Models(context.Background(), "tenant", "subscription", "group", "resource")
+		}},
+	}
+
+	for _, check := range checks {
+		t.Run(check.name, func(t *testing.T) {
+			values, err := check.call()
+			if err != nil {
+				t.Fatal(err)
+			}
+			value := reflect.ValueOf(values)
+			if value.Kind() != reflect.Slice || value.IsNil() {
+				t.Fatalf("result = %#v, want a non-nil slice", values)
+			}
+			encoded, err := json.Marshal(values)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(encoded) != "[]" {
+				t.Fatalf("JSON result = %s, want []", encoded)
+			}
+		})
 	}
 }
 

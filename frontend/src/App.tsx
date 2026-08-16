@@ -21,6 +21,10 @@ function selectExisting<T>(values: T[], preferred: string | undefined, key: (val
   return values.length > 0 ? key(values[0]) : "";
 }
 
+function selectInitialTenant(values: Tenant[], savedTenantId: string, authTenantId: string): string {
+  return selectExisting(values, savedTenantId || authTenantId, (value) => value.id);
+}
+
 export default function App() {
   const [tab, setTab] = useState<Tab>("connect");
   const [auth, setAuth] = useState({ cliInstalled: false, cliVersion: "", signedIn: false, username: "", tenantId: "", message: "" });
@@ -50,7 +54,7 @@ export default function App() {
       setAuth(snapshot.auth);
       setOpenCodex(snapshot.openCodex);
       if (snapshot.auth.signedIn) {
-        await loadHierarchy(snapshot.selection);
+        await loadHierarchy(snapshot.selection, snapshot.auth.tenantId);
       }
     });
   }, []);
@@ -132,10 +136,10 @@ export default function App() {
     return loadGroupsFor(tenant, subscription, preferredGroup, preferredResource, preferredDeployment);
   }
 
-  async function loadHierarchy(preferred?: Partial<Selection>) {
+  async function loadHierarchy(preferred?: Partial<Selection>, authTenantId = auth.tenantId) {
     const values = await api.tenants();
     setTenants(values);
-    const tenant = selectExisting(values, preferred?.tenantId, (value) => value.id);
+    const tenant = selectInitialTenant(values, preferred?.tenantId ?? "", authTenantId);
     setTenantId(tenant);
     const selected = await loadSubscriptionsFor(tenant, preferred?.subscriptionId, preferred?.resourceGroup, preferred?.resourceName, preferred?.deploymentName);
     const restored = selected.resource === preferred?.resourceName && selected.deployment === preferred?.deploymentName;
@@ -148,7 +152,7 @@ export default function App() {
     await run("Azure CLIのサインインを待機中", async () => {
       const value = await api.signIn();
       setAuth(value);
-      await loadHierarchy();
+      await loadHierarchy(undefined, value.tenantId);
     });
   }
 
