@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"sort"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v4"
@@ -14,9 +16,14 @@ import (
 )
 
 type SDKClient struct {
-	runner    CLIRunner
-	authState AuthState
+	runner            CLIRunner
+	authState         AuthState
+	credentialFactory func(string, string) (azcore.TokenCredential, error)
+	clientOptions     *arm.ClientOptions
 }
+
+var _ Client = (*SDKClient)(nil)
+var _ DeploymentWriter = (*SDKClient)(nil)
 
 func NewSDKClient() *SDKClient {
 	return NewSDKClientWithRunner(localCLIRunner{})
@@ -60,9 +67,12 @@ func (c *SDKClient) ready() error {
 	return nil
 }
 
-func (c *SDKClient) credentialForScope(tenantID, subscriptionID string) (*azidentity.AzureCLICredential, error) {
+func (c *SDKClient) credentialForScope(tenantID, subscriptionID string) (azcore.TokenCredential, error) {
 	if err := c.ready(); err != nil {
 		return nil, err
+	}
+	if c.credentialFactory != nil {
+		return c.credentialFactory(tenantID, subscriptionID)
 	}
 	return azidentity.NewAzureCLICredential(credentialOptionsForScope(tenantID, subscriptionID))
 }
@@ -113,7 +123,7 @@ func (c *SDKClient) Tenants(ctx context.Context) ([]Tenant, error) {
 	if err != nil {
 		return nil, err
 	}
-	client, err := armsubscription.NewTenantsClient(credential, nil)
+	client, err := armsubscription.NewTenantsClient(credential, c.clientOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -137,7 +147,7 @@ func (c *SDKClient) Subscriptions(ctx context.Context, tenantID string) ([]Subsc
 	if err != nil {
 		return nil, err
 	}
-	client, err := armsubscription.NewSubscriptionsClient(credential, nil)
+	client, err := armsubscription.NewSubscriptionsClient(credential, c.clientOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +175,7 @@ func (c *SDKClient) ResourceGroups(ctx context.Context, tenantID, subscriptionID
 	if err != nil {
 		return nil, err
 	}
-	client, err := armcognitiveservices.NewAccountsClient(subscriptionID, credential, nil)
+	client, err := armcognitiveservices.NewAccountsClient(subscriptionID, credential, c.clientOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -186,7 +196,7 @@ func (c *SDKClient) ModelResources(ctx context.Context, tenantID, subscriptionID
 	if err != nil {
 		return nil, err
 	}
-	client, err := armcognitiveservices.NewAccountsClient(subscriptionID, credential, nil)
+	client, err := armcognitiveservices.NewAccountsClient(subscriptionID, credential, c.clientOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -212,7 +222,7 @@ func (c *SDKClient) GetModelResource(ctx context.Context, tenantID, subscription
 	if err != nil {
 		return ModelResource{}, err
 	}
-	client, err := armcognitiveservices.NewAccountsClient(subscriptionID, credential, nil)
+	client, err := armcognitiveservices.NewAccountsClient(subscriptionID, credential, c.clientOptions)
 	if err != nil {
 		return ModelResource{}, err
 	}
@@ -231,7 +241,7 @@ func (c *SDKClient) Deployments(ctx context.Context, tenantID, subscriptionID, r
 	if err != nil {
 		return nil, err
 	}
-	client, err := armcognitiveservices.NewDeploymentsClient(subscriptionID, credential, nil)
+	client, err := armcognitiveservices.NewDeploymentsClient(subscriptionID, credential, c.clientOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -256,7 +266,7 @@ func (c *SDKClient) Models(ctx context.Context, tenantID, subscriptionID, resour
 	if err != nil {
 		return nil, err
 	}
-	client, err := armcognitiveservices.NewAccountsClient(subscriptionID, credential, nil)
+	client, err := armcognitiveservices.NewAccountsClient(subscriptionID, credential, c.clientOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -271,18 +281,7 @@ func (c *SDKClient) Models(ctx context.Context, tenantID, subscriptionID, resour
 			if item == nil {
 				continue
 			}
-			capabilities := make(map[string]string, len(item.Capabilities))
-			for key, value := range item.Capabilities {
-				capabilities[key] = stringValue(value)
-			}
-			format := stringValue(item.Format)
-			result = append(result, DeployableModel{
-				Name:           stringValue(item.Name),
-				Format:         format,
-				Version:        stringValue(item.Version),
-				Capabilities:   capabilities,
-				CodexCandidate: isCodexCandidate(format, capabilities),
-			})
+			result = append(result, accountModelToDTO(item))
 		}
 	}
 	return result, nil
@@ -293,7 +292,7 @@ func (c *SDKClient) ListKeys(ctx context.Context, tenantID, subscriptionID, reso
 	if err != nil {
 		return KeyBundle{}, err
 	}
-	client, err := armcognitiveservices.NewAccountsClient(subscriptionID, credential, nil)
+	client, err := armcognitiveservices.NewAccountsClient(subscriptionID, credential, c.clientOptions)
 	if err != nil {
 		return KeyBundle{}, err
 	}
@@ -302,6 +301,28 @@ func (c *SDKClient) ListKeys(ctx context.Context, tenantID, subscriptionID, reso
 		return KeyBundle{}, RequireOperation(err, "List Azure Model Resource keys", resourceGroup+"/"+resourceName)
 	}
 	return KeyBundle{PrimaryKey: stringValue(response.Key1)}, nil
+}
+
+func (c *SDKClient) CreateOrUpdateDeployment(ctx context.Context, tenantID, subscriptionID, resourceGroup, resourceName string, input DeploymentInput) (Deployment, error) {
+	credential, err := c.credentialForScope(tenantID, subscriptionID)
+	if err != nil {
+		return Deployment{}, err
+	}
+	client, err := armcognitiveservices.NewDeploymentsClient(subscriptionID, credential, deploymentClientOptions(c.clientOptions))
+	if err != nil {
+		return Deployment{}, err
+	}
+
+	deployment := deploymentFromInput(input)
+	poller, err := client.BeginCreateOrUpdate(ctx, resourceGroup, resourceName, input.Name, deployment, nil)
+	if err != nil {
+		return Deployment{}, RequireOperation(err, "Create or update Model Deployment", deploymentScope(resourceGroup, resourceName, input.Name))
+	}
+	response, err := poller.PollUntilDone(ctx, nil)
+	if err != nil {
+		return Deployment{}, RequireOperation(err, "Create or update Model Deployment", deploymentScope(resourceGroup, resourceName, input.Name))
+	}
+	return deploymentToDTO(&response.Deployment), nil
 }
 
 func isSupportedKind(kind string) bool {
@@ -360,6 +381,9 @@ func deploymentToDTO(item *armcognitiveservices.Deployment) Deployment {
 	result := Deployment{ID: stringValue(item.ID), Name: stringValue(item.Name)}
 	if item.Properties != nil {
 		result.ProvisioningState = deploymentState(item.Properties.ProvisioningState)
+		if item.Properties.VersionUpgradeOption != nil {
+			result.VersionUpgradeOption = string(*item.Properties.VersionUpgradeOption)
+		}
 		if item.Properties.Model != nil {
 			result.ModelName = stringValue(item.Properties.Model.Name)
 			result.ModelFormat = stringValue(item.Properties.Model.Format)
@@ -375,11 +399,150 @@ func deploymentToDTO(item *armcognitiveservices.Deployment) Deployment {
 	return result
 }
 
+func accountModelToDTO(item *armcognitiveservices.AccountModel) DeployableModel {
+	capabilities := make(map[string]string, len(item.Capabilities))
+	for key, value := range item.Capabilities {
+		capabilities[key] = stringValue(value)
+	}
+	format := stringValue(item.Format)
+	result := DeployableModel{
+		Name:           stringValue(item.Name),
+		Format:         format,
+		Version:        stringValue(item.Version),
+		Capabilities:   capabilities,
+		MaxCapacity:    int32Value(item.MaxCapacity),
+		CodexCandidate: isCodexCandidate(format, capabilities),
+		SKUs:           make([]ModelSKU, 0, len(item.SKUs)),
+	}
+	for _, sku := range item.SKUs {
+		if sku == nil {
+			continue
+		}
+		result.SKUs = append(result.SKUs, modelSKUToDTO(sku))
+	}
+	return result
+}
+
+func modelSKUToDTO(item *armcognitiveservices.ModelSKU) ModelSKU {
+	name := stringValue(item.Name)
+	usageName := stringValue(item.UsageName)
+	unit := capacityUnit(name, usageName)
+	result := ModelSKU{
+		Name:               name,
+		UsageName:          usageName,
+		Unit:               unit,
+		TPMPerCapacityUnit: tpmPerCapacityUnit(unit, item.RateLimits),
+	}
+	if item.Capacity != nil {
+		result.Capacity = CapacityConstraints{
+			Minimum:       int32Value(item.Capacity.Minimum),
+			Maximum:       int32Value(item.Capacity.Maximum),
+			Step:          int32Value(item.Capacity.Step),
+			Default:       int32Value(item.Capacity.Default),
+			AllowedValues: int32Values(item.Capacity.AllowedValues),
+		}
+	}
+	return result
+}
+
+func deploymentFromInput(input DeploymentInput) armcognitiveservices.Deployment {
+	properties := &armcognitiveservices.DeploymentProperties{
+		Model: &armcognitiveservices.DeploymentModel{
+			Name:    stringPointer(input.ModelName),
+			Format:  stringPointer(input.ModelFormat),
+			Version: stringPointer(input.ModelVersion),
+		},
+	}
+	if input.VersionUpgradeOption != nil {
+		option := armcognitiveservices.DeploymentModelVersionUpgradeOption(*input.VersionUpgradeOption)
+		properties.VersionUpgradeOption = &option
+	}
+	return armcognitiveservices.Deployment{
+		Properties: properties,
+		SKU: &armcognitiveservices.SKU{
+			Name:     stringPointer(input.SKU),
+			Capacity: &input.Capacity,
+		},
+	}
+}
+
+func deploymentScope(resourceGroup, resourceName, deploymentName string) string {
+	return strings.Trim(strings.Join([]string{resourceGroup, resourceName, deploymentName}, "/"), "/")
+}
+
+func deploymentClientOptions(options *arm.ClientOptions) *arm.ClientOptions {
+	if options == nil {
+		options = &arm.ClientOptions{}
+	} else {
+		options = options.Clone()
+	}
+	options.Retry.MaxRetries = -1
+	return options
+}
+
+func capacityUnit(name, usageName string) string {
+	value := strings.ToLower(name + " " + usageName)
+	if strings.Contains(value, "provisioned") || strings.Contains(value, "ptu") {
+		return "PTU"
+	}
+	return "TPM"
+}
+
+func tpmPerCapacityUnit(unit string, rateLimits []*armcognitiveservices.CallRateLimit) int32 {
+	if strings.EqualFold(unit, "PTU") {
+		return 1
+	}
+
+	const maxInt32 = int64(1<<31 - 1)
+	var result int32
+	for _, rateLimit := range rateLimits {
+		if rateLimit == nil || rateLimit.Count == nil || rateLimit.RenewalPeriod == nil {
+			continue
+		}
+		count := float64(*rateLimit.Count)
+		renewalPeriod := float64(*rateLimit.RenewalPeriod)
+		if count <= 0 || renewalPeriod <= 0 {
+			continue
+		}
+		perMinute := count * 60 / renewalPeriod
+		rounded := math.Round(perMinute)
+		if math.IsNaN(perMinute) || math.IsInf(perMinute, 0) || math.Abs(perMinute-rounded) > 0.0001 || rounded > float64(maxInt32) {
+			continue
+		}
+		candidate := int32(rounded)
+		if candidate > result {
+			result = candidate
+		}
+	}
+	return result
+}
+
 func stringValue(value *string) string {
 	if value == nil {
 		return ""
 	}
 	return *value
+}
+
+func stringPointer(value string) *string {
+	return &value
+}
+
+func int32Value(value *int32) int32 {
+	if value == nil {
+		return 0
+	}
+	return *value
+}
+
+func int32Values(values []*int32) []int32 {
+	result := make([]int32, 0, len(values))
+	for _, value := range values {
+		if value != nil {
+			result = append(result, *value)
+		}
+	}
+	return result
 }
 
 func boolValue(value *bool) bool {

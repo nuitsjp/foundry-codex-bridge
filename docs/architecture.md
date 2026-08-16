@@ -266,7 +266,8 @@ opencodex の `azure-openai` アダプターはモデル名の固定許可リス
 ## Capacity の表示
 
 - `AccountModel.SKUs` の capacity 設定から、SKU ごとの最小値、最大値、刻み、既定値、許容値を表示する。
-- Capacity を一律に TPM と表記しない。Standard 系はモデル固有の TPM 換算単位、Provisioned 系は PTU として扱う。
+- Standard 系は `rateLimits` から導出した 1 API capacity unit あたりの TPM で capacity 制約と既存 deployment の値を正規化し、画面では TPM として入力する。Azure API へ送る直前に API capacity unit へ戻す。換算値を導出できない SKU は誤送信を避けるため作成・更新できない。
+- Provisioned 系は PTU として表示・入力し、API へは無変換で送る。
 - Azure が返す available capacity は作成成功の保証ではない。作成・更新の確定結果は `DeploymentsClient.BeginCreateOrUpdate` の完了結果とする。
 
 ## Secret の扱い
