@@ -53,7 +53,8 @@ export type Selection = {
   resourceGroup: string;
   resourceId: string;
   resourceName: string;
-  deploymentName: string;
+  deploymentNames: string[];
+  defaultDeploymentName: string;
   providerId: string;
 };
 export type Snapshot = {
@@ -62,8 +63,48 @@ export type Snapshot = {
   openCodex: OpenCodexState;
   azureClientReady: boolean;
 };
-export type SyncStage = { name: string; status: "succeeded" | "failed"; message: string };
-export type SyncResult = { ok: boolean; providerId: string; deployment: string; stages: SyncStage[] };
+export type SyncStage = { name: string; status: "pending" | "succeeded" | "failed"; message: string };
+export type ConnectionResult = { deployment: string; status: string; message: string };
+export type SyncResult = {
+  ok: boolean;
+  providerId: string;
+  deployment: string;
+  stages: SyncStage[];
+  connections: ConnectionResult[];
+};
+export type SyncRequest = {
+  tenantId: string;
+  subscriptionId: string;
+  resourceGroup: string;
+  resourceName: string;
+  deploymentNames: string[];
+  defaultDeploymentName: string;
+  providerId: string;
+  confirmCosts: boolean;
+};
+export type SyncChange = { area: string; action: string; details: string };
+export type SyncPreview = { ok: boolean; providerId: string; changes: SyncChange[]; message: string };
+export type ManagedProvider = {
+  resourceId: string;
+  providerId: string;
+  tenantId: string;
+  subscriptionId: string;
+  resourceGroup: string;
+  resourceName: string;
+  location: string;
+  deploymentNames: string[];
+  defaultDeploymentName: string;
+};
+export type DisconnectPreview = {
+  ok: boolean;
+  managed: ManagedProvider;
+  isDefault: boolean;
+  dependentCombos: string[];
+  replacementProviders: string[];
+  message: string;
+};
+export type DisconnectRequest = { resourceId: string; replacementProviderId: string };
+export type ActionResult = { ok: boolean; stages: SyncStage[] };
 
 type BoundApp = {
   Snapshot(): Promise<Snapshot>;
@@ -76,15 +117,17 @@ type BoundApp = {
   Models(tenantId: string, subscriptionId: string, resourceGroup: string, resourceName: string): Promise<DeployableModel[]>;
   PrepareOpenCodex(): Promise<OpenCodexState>;
   OpenCodexState(): Promise<OpenCodexState>;
-  Sync(request: {
-    tenantId: string;
-    subscriptionId: string;
-    resourceGroup: string;
-    resourceName: string;
-    deploymentName: string;
-    providerId: string;
-    confirmCosts: boolean;
-  }): Promise<SyncResult>;
+  PreviewSync(request: SyncRequest): Promise<SyncPreview>;
+  ManagedProviders(): Promise<ManagedProvider[]>;
+  PreviewDisconnect(resourceId: string): Promise<DisconnectPreview>;
+  Disconnect(request: DisconnectRequest): Promise<ActionResult>;
+  StartOpenCodex(): Promise<ActionResult>;
+  StopOpenCodex(): Promise<ActionResult>;
+  RepairOpenCodex(): Promise<ActionResult>;
+  UpdateOpenCodex(): Promise<ActionResult>;
+  ChangeOpenCodexPort(port: number): Promise<ActionResult>;
+  RestartCodexCatalog(): Promise<ActionResult>;
+  Sync(request: SyncRequest): Promise<SyncResult>;
 };
 
 declare global {
@@ -105,6 +148,34 @@ export function normalizeList<T>(value: T[] | null | undefined): T[] {
   return value ?? [];
 }
 
+function normalizeSyncResult(value: SyncResult): SyncResult {
+  return { ...value, stages: normalizeList(value.stages), connections: normalizeList(value.connections) };
+}
+
+function normalizeManagedProvider(value: ManagedProvider): ManagedProvider {
+  return {
+    ...value,
+    deploymentNames: normalizeList(value.deploymentNames),
+  };
+}
+
+function normalizeSyncPreview(value: SyncPreview): SyncPreview {
+  return { ...value, changes: normalizeList(value.changes) };
+}
+
+function normalizeDisconnectPreview(value: DisconnectPreview): DisconnectPreview {
+  return {
+    ...value,
+    managed: normalizeManagedProvider(value.managed),
+    dependentCombos: normalizeList(value.dependentCombos),
+    replacementProviders: normalizeList(value.replacementProviders),
+  };
+}
+
+function normalizeActionResult(value: ActionResult): ActionResult {
+  return { ...value, stages: normalizeList(value.stages) };
+}
+
 export const api = {
   snapshot: () => boundApp().Snapshot(),
   signIn: () => boundApp().SignIn(),
@@ -116,5 +187,15 @@ export const api = {
   models: (tenantId: string, subscriptionId: string, resourceGroup: string, resourceName: string) => boundApp().Models(tenantId, subscriptionId, resourceGroup, resourceName).then(normalizeList),
   prepareOpenCodex: () => boundApp().PrepareOpenCodex(),
   openCodexState: () => boundApp().OpenCodexState(),
-  sync: (request: Parameters<BoundApp["Sync"]>[0]) => boundApp().Sync(request),
+  previewSync: (request: SyncRequest) => boundApp().PreviewSync(request).then(normalizeSyncPreview),
+  managedProviders: () => boundApp().ManagedProviders().then((value) => normalizeList(value).map(normalizeManagedProvider)),
+  previewDisconnect: (resourceId: string) => boundApp().PreviewDisconnect(resourceId).then(normalizeDisconnectPreview),
+  disconnect: (request: DisconnectRequest) => boundApp().Disconnect(request).then(normalizeActionResult),
+  startOpenCodex: () => boundApp().StartOpenCodex().then(normalizeActionResult),
+  stopOpenCodex: () => boundApp().StopOpenCodex().then(normalizeActionResult),
+  repairOpenCodex: () => boundApp().RepairOpenCodex().then(normalizeActionResult),
+  updateOpenCodex: () => boundApp().UpdateOpenCodex().then(normalizeActionResult),
+  changeOpenCodexPort: (port: number) => boundApp().ChangeOpenCodexPort(port).then(normalizeActionResult),
+  restartCodexCatalog: () => boundApp().RestartCodexCatalog().then(normalizeActionResult),
+  sync: (request: Parameters<BoundApp["Sync"]>[0]) => boundApp().Sync(request).then(normalizeSyncResult),
 };

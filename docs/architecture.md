@@ -18,11 +18,13 @@ FoundryCodex Bridge は、Public Azure 上の Microsoft Foundry リソースと�
 - [Wails project layout](https://wails.io/docs/gettingstarted/firstproject/): Wails 標準の `frontend`、`build`、`go.mod`、`wails.json` 構成。
 - [Wails Windows guide](https://wails.io/docs/guides/windows/): WebView2 ランタイム要件と配布時の扱い。
 
-## 第1段階の実装状況
+## 実装状況
 
 Issue #2 では、Azure の既存 Model Resource と既存 Model Deployment を読み取り、明示的な Sync で opencodex へ反映する縦断機能までを実装する。Deployment の作成・更新、Provider の解除、複数 deployment の公開、Marketplace 契約、Azure RBAC の変更は後続段階の対象である。
 
 第1段階の実装は、Azure CLIのログイン済み資格情報を使うAzure SDKの一覧取得、Node.js/npmの前提確認、必要時のユーザー単位opencodex導入、`ocx service install`、ProviderとPrimaryKeyの登録、custom modelとselected modelの反映、`ocx sync`、Responses endpointの接続テストを含む。起動時の処理は読み取り専用で、SyncはGUIから明示的に実行する。
+
+第2段階では、複数のBridge-managed Provider、Providerごとの複数Deploymentと既定モデル、Sync差分プレビュー、Disconnect、opencodexの日常管理を追加する。第2段階でもAzure Model ResourceとModel Deploymentは読み取り専用であり、作成・更新は第3段階の対象とする。
 
 ## システム境界
 
@@ -278,8 +280,7 @@ Bridge の settings.json に保存してよいもの:
 - subscription ID
 - resource group name
 - Azure Model Resource name
-- deployment name
-- opencodex port
+- deployment names と既定 deployment name
 
 Azure CLIのログイン状態、OAuth access token、refresh tokenはAzure CLIの認証キャッシュに委ねる。Bridgeは認証レコードやトークンキャッシュを作成、読取、削除しない。
 
@@ -289,14 +290,14 @@ Bridge の設定に保存してはいけないもの:
 - OAuth access token
 - refresh token
 
-## 初期 GUI
+## GUI
 
 - **Connect**: Azure CLIの導入・サインイン状態、tenant、subscription、resource group、Azure Model Resource選択。
 - **Deployments**: deployment 一覧、詳細、作成フォーム、Capacity / version 更新。
 - **opencodex**: インストール状態、起動状態、port、ready 状態。
 - **Sync**: 選択 deployment、opencodex Provider プレビュー、適用、catalog sync 結果、接続テスト結果、Bridge-managed Provider 一覧、Codex からの解除。
 
-第1段階の Deployments タブは既存 deployment と候補モデルの読み取りに限定する。作成・更新・解除などの項目は後続段階で追加する。
+第2段階の Deployments タブは既存 deployment と候補モデルの読み取り、および公開対象と既定モデルの選択に限定する。Azure上のdeployment作成・更新は第3段階で追加する。
 
 ## 初期スコープ外
 
