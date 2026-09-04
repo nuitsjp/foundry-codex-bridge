@@ -124,6 +124,7 @@
   }
   .banner .ico{font-size:14px}
   .banner .spacer{margin-left:auto}
+  .banner.info{background:var(--accent-soft);border-bottom-color:#cfe3f5;color:#0b4a80}
 
   /* ---------- ホーム本体 ---------- */
   .home-main{flex:1;min-height:0;display:flex}
@@ -405,6 +406,7 @@
     <option value="home-empty">ホーム（空）</option>
     <option value="home" selected>ホーム（通常）</option>
     <option value="home-diff">ホーム（差分あり）</option>
+    <option value="home-restart">ホーム（Codex 再起動待ち）</option>
     <option value="home-detail">詳細パネル表示</option>
     <option value="add-modal">モデル追加モーダル</option>
     <option value="az-create">Azure 作成中</option>
@@ -412,6 +414,7 @@
     <option value="sync-confirm">反映の確認</option>
     <option value="sync-progress">反映の進行中</option>
     <option value="sync-result">反映の結果（1件失敗）</option>
+    <option value="restart-confirm">Codex 再起動の確認</option>
     <option value="settings">設定</option>
     <option value="add-res-modal">リソース追加モーダル（設定）</option>
   </select>
@@ -509,6 +512,13 @@
         <button class="btn primary" id="btnSyncFromBanner">Codex へ反映</button>
       </div>
 
+      <div class="banner info" id="restartBanner" hidden>
+        <span class="ico">ℹ</span>
+        <span>Codex の再起動待ち — 新しいモデル一覧は Codex を再起動すると反映されます</span>
+        <span class="spacer"></span>
+        <button class="btn" id="btnRestartFromBanner">Codex を再起動…</button>
+      </div>
+
       <div class="home-main" id="homeMain">
         <div class="list-pane" id="listPane"><!-- JS で描画 --></div>
         <aside class="detail" id="detailPane" hidden></aside>
@@ -596,7 +606,7 @@
             <div class="t">Codex を再起動して反映</div>
             <div class="d">Codex はモデル一覧を起動時に読み込みます。追加が見えないときはここから再起動します。</div>
           </div>
-          <button class="btn">Codex を再起動</button>
+          <button class="btn" id="btnSettingsRestart">Codex を再起動…</button>
         </div>
 
         <h2>その他</h2>
@@ -784,6 +794,10 @@
   var sel = document.getElementById("screenSelect");
   var current = "home";
   var selectedDep = null;
+  /* Codex の再起動待ち（ホームの情報バナー）。opencodex が「再起動が必要」と報告したら立つ。 */
+  var restartPending = false;
+  /* 反映の結果画面に再起動の注意行を出すか（opencodex の報告を模す） */
+  var syncRestartNeeded = true;
 
   function show(id, on){ document.getElementById(id).hidden = !on; }
   function renderHome(){ render(stageCounts().total ? "home-diff" : "home"); }
@@ -814,6 +828,7 @@
     document.getElementById("btnAddModel").hidden = empty;
     document.getElementById("filterPubLabel").hidden = empty;
     renderBanner();
+    renderRestartBanner();
     document.getElementById("homeSub").textContent = empty
       ? "この Azure リソースに Model Deployment はありません"
       : resources.length + " つの Azure リソース / Deployment " + deployments.length
@@ -827,6 +842,11 @@
     if (screen === "sync-confirm")  openConfirm();
     if (screen === "sync-progress") openProgress(1, null);
     if (screen === "sync-result")   openResult();
+    if (screen === "restart-confirm") openRestartDialog();
+  }
+
+  function renderRestartBanner(){
+    document.getElementById("restartBanner").hidden = !restartPending;
   }
 
   function renderBanner(){
@@ -848,6 +868,9 @@
   sel.addEventListener("change", function(){
     if (sel.value === "home-diff" || sel.value.indexOf("sync-") === 0) seedStaged();
     else resetStaged();
+    /* 再起動待ちの状態を持つ画面 */
+    restartPending = (sel.value === "home-restart" || sel.value === "restart-confirm");
+    syncRestartNeeded = true;
     /* 走査の初期状態: 「初回セットアップ」は未選択、それ以外は既定の 2 件が接続済み */
     setConnections(sel.value !== "setup-first");
     selectedDep = null;
@@ -1590,8 +1613,6 @@
       +   '<div class="summary-box">'+rows+'</div>'
       +   '<div class="notice warn"><span>⚠</span><div>公開する Deployment には接続テストとして'
       +     'Azure へ実際のリクエストを 1 回送ります。ごく少額ですが<b>課金が発生します</b>。</div></div>'
-      +   '<label class="chk"><input type="checkbox" checked>'
-      +     '<span>反映後に <b>Codex を再起動</b>する（Codex はモデル一覧を起動時に読み込むため、再起動しないと変更が反映されないことがあります）</span></label>'
       + '</div>'
       + '<div class="modal-foot"><span class="spacer"></span>'
       +   '<button class="btn" data-back>戻る</button>'
@@ -1641,6 +1662,8 @@
   }
 
   function runProgress(){
+    /* 反映のたびに opencodex の「再起動が必要」報告を受け直す想定 */
+    syncRestartNeeded = true;
     openProgress(0, null);
     var i = 0;
     var timer = setInterval(function(){
@@ -1708,7 +1731,17 @@
     var extra = [];
     if (unpubs.length) extra.push('非公開にした ' + unpubs.length + ' 件を Codex のモデル一覧から外しました。');
     if (defDep) extra.push('既定モデルを <b>' + defDep.name + '</b> にしました。');
-    extra.push('Codex を再起動しました。');
+
+    /* opencodex が「Codex 側のカタログ再読込のため再起動が必要」と報告したときだけ出す注意行 */
+    var restartBlock = syncRestartNeeded
+      ? '<div class="notice info" style="align-items:center">'
+        + '<span>↻</span>'
+        + '<div style="flex:1">Codex を再起動すると新しいモデル一覧が反映されます。'
+        +   'Codex を再起動するまで、Codex には以前のモデル一覧が表示されます。</div>'
+        + '<button class="btn" id="resultRestart" style="flex:0 0 auto">Codex を再起動…</button>'
+        + '<button class="btn subtle" id="resultLater" style="flex:0 0 auto">後で</button>'
+        + '</div>'
+      : '';
 
     var m = mount(
       '<div class="modal">'
@@ -1717,21 +1750,87 @@
       +   '<div class="s">公開した '+tested.length+' 件のうち '+okCount+' 件が Codex で使えるようになりました。</div></div>'
       + '<div class="modal-body">'
       +   rows
-      +   '<div class="notice info"><span>ℹ</span><div>'+extra.join("<br>")+'</div></div>'
+      +   (extra.length
+            ? '<div class="notice info"><span>ℹ</span><div>'+extra.join("<br>")+'</div></div>' : '')
+      +   restartBlock
       + '</div>'
       + '<div class="modal-foot"><span class="spacer"></span>'
       +   (failCount ? '<button class="btn" id="retryFailed">失敗した '+failCount+' 件を再試行</button>' : '')
       +   '<button class="btn primary" id="resultDone">完了</button>'
       + '</div></div>'
     );
-    m.querySelector("#resultDone").addEventListener("click", function(){
+
+    /* 結果画面を閉じる = 反映を確定。再起動が必要なままならホームに再起動待ちの行を残す。 */
+    function finishResult(){
       overlay.innerHTML = "";
       commitStaged();
+      restartPending = syncRestartNeeded;
       selectedDep = null;
       render("home");
+    }
+    m.querySelector("#resultDone").addEventListener("click", finishResult);
+    var later = m.querySelector("#resultLater");
+    if (later) later.addEventListener("click", finishResult);
+    var rr = m.querySelector("#resultRestart");
+    if (rr) rr.addEventListener("click", function(){
+      openRestartDialog({onClose: function(){ openResult(); }});
     });
     var rt = m.querySelector("#retryFailed");
     if (rt) rt.addEventListener("click", function(){ runProgress(); });
+  }
+
+  /* ============ Codex 再起動の確認ダイアログ（共通部品）============
+     反映の結果画面 / ホームの再起動待ち行 / 設定 のいずれからも、必ずここを通す。 */
+  function openRestartDialog(opt){
+    opt = opt || {};
+    var closed = false;
+
+    function finish(){
+      if (closed) return;
+      closed = true;
+      document.removeEventListener("keydown", onKey);
+      overlay.innerHTML = "";
+      if (opt.onClose) opt.onClose();
+      else renderRestartBanner();
+    }
+    function onKey(e){ if (e.key === "Escape" || e.key === "Esc") finish(); }
+    document.addEventListener("keydown", onKey);
+
+    var m = mount(
+      '<div class="modal" style="width:480px">'
+      + '<div class="modal-head"><h2>Codex を再起動しますか？</h2></div>'
+      + '<div class="modal-body" id="restartBody">'
+      +   '<div style="font-size:13.5px;line-height:1.6">Codex で作業中の内容は失われる可能性があります。'
+      +     '作業を保存してから続けてください。</div>'
+      + '</div>'
+      + '<div class="modal-foot" id="restartFoot"><span class="spacer"></span>'
+      +   '<button class="btn" id="restartCancel">キャンセル</button>'
+      +   '<button class="btn primary" id="restartRun">再起動する</button>'
+      + '</div></div>'
+    );
+
+    overlay.querySelector(".scrim").addEventListener("click", function(e){
+      if (e.target === this) finish();
+    });
+    m.querySelector("#restartCancel").addEventListener("click", finish);
+    m.querySelector("#restartRun").addEventListener("click", function(){
+      document.getElementById("restartBody").innerHTML =
+        '<div style="display:flex;align-items:center;gap:12px;padding:10px 0">'
+        + '<span class="spinner dark"></span><span>Codex を再起動しています…</span></div>';
+      document.getElementById("restartFoot").innerHTML =
+        '<span class="spacer"></span><button class="btn" disabled>閉じる</button>';
+      setTimeout(function(){
+        restartPending = false;
+        syncRestartNeeded = false;
+        var body = document.getElementById("restartBody");
+        if (!body){ return; }
+        body.innerHTML =
+          '<div class="result-row" style="margin-bottom:0">'
+          + '<span class="badge ok"><span class="dot"></span>完了</span>'
+          + '<div class="txt"><div class="t">再起動しました</div></div></div>';
+        setTimeout(finish, 800);
+      }, 1200);
+    });
   }
 
   /* ============ 設定：Azure セクション ============ */
@@ -1817,6 +1916,8 @@
     resetStaged(); selectedDep = null; render("home");
   });
   document.getElementById("btnAddResource").addEventListener("click", function(){ render("add-res-modal"); });
+  document.getElementById("btnRestartFromBanner").addEventListener("click", function(){ openRestartDialog(); });
+  document.getElementById("btnSettingsRestart").addEventListener("click", function(){ openRestartDialog(); });
 
   render("home");
 })();
