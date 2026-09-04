@@ -1,0 +1,1032 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FoundryCodex Bridge - UI モック</title>
+<style>
+  :root{
+    --bg:#f3f3f3;
+    --surface:#ffffff;
+    --surface-2:#fafafa;
+    --surface-3:#f5f5f5;
+    --line:#e3e3e3;
+    --line-strong:#d0d0d0;
+    --text:#1b1b1b;
+    --text-2:#5c5c5c;
+    --text-3:#8a8a8a;
+    --accent:#0f6cbd;
+    --accent-hover:#115ea3;
+    --accent-soft:#eff6fc;
+    --ok:#0f7b0f;
+    --ok-soft:#eff6ef;
+    --warn:#9a6700;
+    --warn-soft:#fff9ee;
+    --err:#c42b1c;
+    --err-soft:#fdf3f2;
+    --radius:6px;
+    --shadow:0 2px 8px rgba(0,0,0,.08),0 0 1px rgba(0,0,0,.12);
+    --shadow-lg:0 16px 48px rgba(0,0,0,.22);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg);
+    font-family:"Segoe UI Variable","Segoe UI","Yu Gothic UI",system-ui,sans-serif;
+    font-size:14px;color:var(--text);
+    padding:28px 16px 56px;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  /* ---------- 開発用ツールバー ---------- */
+  .devbar{
+    width:1100px;margin:0 auto 14px;display:flex;align-items:center;gap:10px;
+    font-size:12px;color:var(--text-2);
+  }
+  .devbar strong{font-size:12px;font-weight:600;color:var(--text)}
+  .devbar select{
+    font-family:inherit;font-size:12px;padding:5px 8px;border:1px solid var(--line-strong);
+    border-radius:4px;background:#fff;color:var(--text);min-width:250px;
+  }
+  .devbar .hint{margin-left:auto;color:var(--text-3)}
+
+  /* ---------- ウィンドウ枠 ---------- */
+  .window{
+    width:1100px;height:720px;margin:0 auto;background:var(--surface);
+    border:1px solid var(--line-strong);border-radius:8px;overflow:hidden;
+    box-shadow:var(--shadow-lg);display:flex;flex-direction:column;position:relative;
+  }
+  .titlebar{
+    height:34px;flex:0 0 34px;background:var(--surface-3);border-bottom:1px solid var(--line);
+    display:flex;align-items:center;padding:0 0 0 12px;gap:8px;user-select:none;
+  }
+  .titlebar .app-mark{
+    width:16px;height:16px;border-radius:4px;background:linear-gradient(135deg,#0f6cbd,#2aa0e8);
+    display:inline-block;flex:0 0 16px;
+  }
+  .titlebar .title{font-size:12px;color:var(--text-2)}
+  .winbtns{margin-left:auto;display:flex;height:100%}
+  .winbtns span{
+    width:46px;height:100%;display:flex;align-items:center;justify-content:center;
+    font-size:10px;color:var(--text-2);
+  }
+  .winbtns span:last-child:hover{background:#c42b1c;color:#fff}
+  .winbtns span:hover{background:#e6e6e6}
+
+  .body{flex:1;min-height:0;display:flex;flex-direction:column;position:relative}
+
+  /* ---------- 共通パーツ ---------- */
+  .btn{
+    font-family:inherit;font-size:13px;padding:7px 14px;border-radius:4px;
+    border:1px solid var(--line-strong);background:var(--surface);color:var(--text);
+    cursor:pointer;line-height:1.3;white-space:nowrap;
+  }
+  .btn:hover{background:var(--surface-3)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  .btn.primary:hover{background:var(--accent-hover);border-color:var(--accent-hover)}
+  .btn.primary:disabled{background:#c8c8c8;border-color:#c8c8c8;cursor:default}
+  .btn.subtle{border-color:transparent;background:transparent;color:var(--accent)}
+  .btn.subtle:hover{background:var(--accent-soft)}
+  .btn.danger-text{border-color:transparent;background:transparent;color:var(--err)}
+  .btn.danger-text:hover{background:var(--err-soft)}
+  .btn.big{font-size:15px;padding:11px 26px}
+  .btn.icon{padding:6px 9px;border-color:transparent;background:transparent;color:var(--text-2)}
+  .btn.icon:hover{background:var(--surface-3)}
+
+  .badge{
+    display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:2px 8px;
+    border-radius:10px;border:1px solid transparent;white-space:nowrap;
+  }
+  .badge .dot{width:7px;height:7px;border-radius:50%;background:currentColor;flex:0 0 7px}
+  .badge.ok{background:var(--ok-soft);color:var(--ok);border-color:#cfe6cf}
+  .badge.warn{background:var(--warn-soft);color:var(--warn);border-color:#f0e0b8}
+  .badge.err{background:var(--err-soft);color:var(--err);border-color:#f3cfcb}
+  .badge.busy{background:var(--accent-soft);color:var(--accent);border-color:#cfe3f5}
+  .badge.mute{background:var(--surface-3);color:var(--text-2);border-color:var(--line)}
+
+  .muted{color:var(--text-2)}
+  .tiny{font-size:12px}
+  .mono{font-family:Consolas,"Cascadia Mono",monospace}
+
+  /* ---------- ヘッダー ---------- */
+  .apphead{
+    flex:0 0 auto;padding:16px 20px 12px;border-bottom:1px solid var(--line);
+    display:flex;align-items:center;gap:12px;background:var(--surface);
+  }
+  .apphead h1{margin:0;font-size:19px;font-weight:600;letter-spacing:.01em}
+  .apphead .sub{font-size:12px;color:var(--text-3);margin-top:2px}
+  .apphead .spacer{margin-left:auto}
+
+  /* ---------- 固定バナー ---------- */
+  .banner{
+    flex:0 0 auto;display:flex;align-items:center;gap:12px;padding:10px 20px;
+    background:var(--warn-soft);border-bottom:1px solid #f0e0b8;font-size:13px;color:#6b4a00;
+  }
+  .banner .ico{font-size:14px}
+  .banner .spacer{margin-left:auto}
+
+  /* ---------- ホーム本体 ---------- */
+  .home-main{flex:1;min-height:0;display:flex}
+  .list-pane{flex:1;min-width:0;overflow:auto;padding:8px 0 20px}
+  .group{margin-top:10px}
+  .group-head{
+    display:flex;align-items:center;gap:8px;padding:8px 20px 6px;
+    font-size:12px;color:var(--text-2);
+  }
+  .group-head .res{font-weight:600;color:var(--text);font-size:13px}
+  .group-head .region{
+    font-size:11px;color:var(--text-2);background:var(--surface-3);
+    border:1px solid var(--line);border-radius:9px;padding:1px 7px;
+  }
+
+  .row{
+    display:flex;align-items:center;gap:12px;padding:10px 20px;margin:0 10px;
+    border-radius:var(--radius);cursor:pointer;border:1px solid transparent;
+  }
+  .row:hover{background:var(--surface-3)}
+  .row.selected{background:var(--accent-soft);border-color:#cfe3f5}
+  .row .star{width:16px;flex:0 0 16px;text-align:center;color:#d9a400;font-size:14px}
+  .row .star.off{color:#dcdcdc}
+  .row .name{flex:0 0 200px;min-width:0}
+  .row .name .n{font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row .name .m{font-size:12px;color:var(--text-2);margin-top:1px}
+  .row .sku{flex:0 0 210px;font-size:12px;color:var(--text-2)}
+  .row .state{flex:0 0 150px}
+  .row .more{margin-left:auto}
+
+  /* ---------- 詳細パネル ---------- */
+  .detail{
+    flex:0 0 340px;border-left:1px solid var(--line);background:var(--surface-2);
+    display:flex;flex-direction:column;overflow:auto;
+  }
+  .detail-head{padding:16px 18px 12px;border-bottom:1px solid var(--line)}
+  .detail-head .t{font-size:16px;font-weight:600}
+  .detail-head .s{font-size:12px;color:var(--text-2);margin-top:3px}
+  .detail-body{padding:14px 18px;flex:1}
+  .field{margin-bottom:16px}
+  .field label{display:block;font-size:12px;color:var(--text-2);margin-bottom:5px}
+  .field .val{font-size:13px}
+  .detail-foot{padding:12px 18px 16px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:8px}
+
+  input[type=text],input[type=number],select{
+    font-family:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--line-strong);
+    border-radius:4px;background:#fff;color:var(--text);width:100%;
+  }
+  input:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:var(--accent)}
+  input[type=range]{width:100%;accent-color:var(--accent)}
+
+  /* ---------- 空状態 ---------- */
+  .empty{
+    flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;
+    padding:40px;text-align:center;
+  }
+  .empty .glyph{
+    width:64px;height:64px;border-radius:16px;background:var(--accent-soft);
+    display:flex;align-items:center;justify-content:center;font-size:28px;color:var(--accent);
+  }
+  .empty p{margin:0;color:var(--text-2);font-size:13.5px}
+
+  /* ---------- セットアップ ---------- */
+  .setup{flex:1;min-height:0;display:flex;flex-direction:column;padding:26px 34px 0;overflow:auto}
+  .setup h1{margin:0 0 4px;font-size:22px;font-weight:600}
+  .setup .lead{margin:0 0 18px;color:var(--text-2);font-size:13.5px}
+  .check{
+    display:flex;align-items:flex-start;gap:14px;padding:14px 16px;border:1px solid var(--line);
+    border-radius:var(--radius);background:var(--surface);margin-bottom:10px;
+  }
+  .check .mark{
+    width:22px;height:22px;flex:0 0 22px;border-radius:50%;display:flex;align-items:center;
+    justify-content:center;font-size:12px;color:#fff;margin-top:1px;
+  }
+  .mark.done{background:var(--ok)}
+  .mark.wait{background:#c8c8c8}
+  .mark.run{background:var(--accent)}
+  .mark.need{background:var(--warn)}
+  .check .txt{flex:1;min-width:0}
+  .check .txt .t{font-weight:600;font-size:13.5px}
+  .check .txt .d{font-size:12.5px;color:var(--text-2);margin-top:3px;line-height:1.5}
+  .check .act{flex:0 0 auto;margin-top:2px}
+  .setup-foot{
+    flex:0 0 auto;margin-top:auto;padding:16px 0 22px;display:flex;align-items:center;gap:14px;
+    position:sticky;bottom:0;background:linear-gradient(to top,var(--surface) 70%,transparent);
+  }
+  .setup-foot .note{font-size:12px;color:var(--text-3)}
+
+  .spinner{
+    width:12px;height:12px;border:2px solid rgba(255,255,255,.45);border-top-color:#fff;
+    border-radius:50%;display:inline-block;animation:spin .8s linear infinite;
+  }
+  .spinner.dark{border-color:rgba(15,108,189,.25);border-top-color:var(--accent)}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* ---------- 設定 ---------- */
+  .settings{flex:1;overflow:auto;padding:22px 34px 30px}
+  .settings h2{font-size:13px;text-transform:none;color:var(--text-2);font-weight:600;margin:22px 0 8px}
+  .settings h2:first-of-type{margin-top:0}
+  .srow{
+    display:flex;align-items:center;gap:14px;padding:12px 16px;border:1px solid var(--line);
+    border-radius:var(--radius);background:var(--surface);margin-bottom:8px;
+  }
+  .srow .txt{flex:1;min-width:0}
+  .srow .txt .t{font-size:13.5px;font-weight:600}
+  .srow .txt .d{font-size:12.5px;color:var(--text-2);margin-top:2px}
+
+  /* ---------- モーダル ---------- */
+  .scrim{
+    position:absolute;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;
+    justify-content:center;z-index:20;
+  }
+  .modal{
+    width:620px;max-height:86%;background:var(--surface);border-radius:8px;box-shadow:var(--shadow-lg);
+    display:flex;flex-direction:column;overflow:hidden;
+  }
+  .modal.wide{width:680px}
+  .modal-head{padding:18px 22px 0}
+  .modal-head h2{margin:0;font-size:18px;font-weight:600}
+  .modal-head .s{font-size:12.5px;color:var(--text-2);margin-top:4px}
+  .tabs{display:flex;gap:4px;margin:14px 0 0;border-bottom:1px solid var(--line)}
+  .tab{
+    font-family:inherit;font-size:13.5px;padding:9px 14px;border:0;background:transparent;
+    cursor:pointer;color:var(--text-2);border-bottom:2px solid transparent;
+  }
+  .tab.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
+  .modal-body{padding:18px 22px;overflow:auto;flex:1}
+  .modal-foot{
+    padding:14px 22px;border-top:1px solid var(--line);background:var(--surface-2);
+    display:flex;align-items:center;gap:10px;
+  }
+  .modal-foot .spacer{margin-left:auto}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+
+  details.adv{border-top:1px solid var(--line);margin-top:16px;padding-top:12px}
+  details.adv summary{cursor:pointer;font-size:13px;color:var(--accent);list-style:none}
+  details.adv summary::-webkit-details-marker{display:none}
+  details.adv summary::before{content:"▸ ";}
+  details.adv[open] summary::before{content:"▾ ";}
+  details.adv .inner{padding-top:14px}
+
+  .modelpick{border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+  .modelpick .search{border:0;border-bottom:1px solid var(--line);border-radius:0}
+  .modelpick .opts{max-height:150px;overflow:auto}
+  .opt{display:flex;align-items:center;gap:10px;padding:8px 10px;cursor:pointer;font-size:13px}
+  .opt:hover{background:var(--surface-3)}
+  .opt.sel{background:var(--accent-soft)}
+  .opt .rec{font-size:11px;color:var(--accent);border:1px solid #cfe3f5;border-radius:9px;padding:0 6px}
+  .opt .meta{margin-left:auto;font-size:12px;color:var(--text-3)}
+
+  .capline{display:flex;align-items:center;gap:12px}
+  .capline input[type=range]{flex:1}
+  .capline .num{flex:0 0 110px;display:flex;align-items:center;gap:6px}
+  .presets{display:flex;gap:6px;margin-top:8px}
+  .chip{
+    font-family:inherit;font-size:12px;padding:3px 10px;border:1px solid var(--line-strong);
+    background:#fff;border-radius:12px;cursor:pointer;color:var(--text-2);
+  }
+  .chip:hover{background:var(--surface-3)}
+  .chip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:600}
+
+  .summary-box{
+    border:1px solid var(--line);border-radius:var(--radius);background:var(--surface-2);padding:14px 16px;
+  }
+  .summary-box dl{margin:0;display:grid;grid-template-columns:130px 1fr;gap:7px 12px;font-size:13px}
+  .summary-box dt{color:var(--text-2)}
+  .summary-box dd{margin:0}
+  .notice{
+    display:flex;gap:10px;padding:11px 13px;border-radius:var(--radius);font-size:12.5px;
+    line-height:1.55;margin-top:14px;
+  }
+  .notice.warn{background:var(--warn-soft);border:1px solid #f0e0b8;color:#6b4a00}
+  .notice.info{background:var(--accent-soft);border:1px solid #cfe3f5;color:#0b4a80}
+  .notice.err{background:var(--err-soft);border:1px solid #f3cfcb;color:#8f1f14}
+  .chk{display:flex;align-items:flex-start;gap:9px;margin-top:14px;font-size:13px;cursor:pointer}
+  .chk input{margin:2px 0 0}
+
+  /* 進行状況 */
+  .steps{list-style:none;margin:0;padding:0}
+  .steps li{display:flex;gap:12px;padding:11px 2px;align-items:flex-start}
+  .steps li + li{border-top:1px solid var(--line)}
+  .steps .ic{
+    width:20px;height:20px;flex:0 0 20px;border-radius:50%;display:flex;align-items:center;
+    justify-content:center;font-size:11px;color:#fff;margin-top:1px;
+  }
+  .ic.done{background:var(--ok)}
+  .ic.run{background:var(--accent)}
+  .ic.pend{background:#d6d6d6}
+  .ic.fail{background:var(--err)}
+  .steps .lbl{flex:1;display:block;min-width:0}
+  .steps .lbl .t{display:block;font-size:13.5px;font-weight:600}
+  .steps .lbl .d{display:block;font-size:12.5px;color:var(--text-2);margin-top:2px}
+  .steps .time{font-size:12px;color:var(--text-3)}
+  .progressbar{height:4px;background:var(--line);border-radius:2px;overflow:hidden;margin:4px 0 18px}
+  .progressbar i{display:block;height:100%;background:var(--accent);transition:width .35s ease}
+
+  .result-row{
+    display:flex;align-items:flex-start;gap:12px;padding:12px 14px;border:1px solid var(--line);
+    border-radius:var(--radius);margin-bottom:8px;background:var(--surface);
+  }
+  .result-row .txt{flex:1;min-width:0}
+  .result-row .txt .t{font-size:13.5px;font-weight:600}
+  .result-row .txt .d{font-size:12.5px;color:var(--text-2);margin-top:3px;line-height:1.5}
+
+  .pubtable{width:100%;border-collapse:collapse;font-size:13px}
+  .pubtable th{
+    text-align:left;font-weight:600;color:var(--text-2);font-size:12px;padding:6px 8px;
+    border-bottom:1px solid var(--line);
+  }
+  .pubtable td{padding:8px;border-bottom:1px solid var(--line)}
+  .pubtable tr:hover td{background:var(--surface-3)}
+  .pubtable input[type=checkbox]{width:15px;height:15px}
+
+  [hidden]{display:none !important}
+</style>
+</head>
+<body>
+
+<div class="devbar">
+  <strong>画面切替（モック用）</strong>
+  <select id="screenSelect">
+    <option value="setup-first">初回セットアップ</option>
+    <option value="setup-almost">セットアップ完了直前</option>
+    <option value="home-empty">ホーム（空）</option>
+    <option value="home" selected>ホーム（通常）</option>
+    <option value="home-diff">ホーム（差分あり）</option>
+    <option value="home-detail">詳細パネル表示</option>
+    <option value="add-modal">モデル追加モーダル</option>
+    <option value="sync-confirm">反映の確認</option>
+    <option value="sync-progress">反映の進行中</option>
+    <option value="sync-result">反映の結果（1件失敗）</option>
+    <option value="settings">設定</option>
+  </select>
+  <span class="hint">FoundryCodex Bridge — 静的 UI モック（ダミーデータ）</span>
+</div>
+
+<div class="window">
+  <div class="titlebar">
+    <span class="app-mark"></span>
+    <span class="title">FoundryCodex Bridge</span>
+    <div class="winbtns"><span>─</span><span>▢</span><span>✕</span></div>
+  </div>
+
+  <div class="body">
+
+    <!-- ================= セットアップ ================= -->
+    <section class="setup" id="scr-setup" hidden>
+      <h1 id="setupTitle">はじめる準備</h1>
+      <p class="lead" id="setupLead">Azure のモデルを Codex から使えるようにするために、4 つの項目を確認します。自動でできることは Bridge が行います。</p>
+
+      <div class="check" id="chk-azure">
+        <div class="mark wait">…</div>
+        <div class="txt">
+          <div class="t">Azure にサインイン</div>
+          <div class="d">Azure CLI でサインインします。ブラウザーが開くので、そちらで承認してください。</div>
+        </div>
+        <div class="act"></div>
+      </div>
+
+      <div class="check" id="chk-node">
+        <div class="mark wait">…</div>
+        <div class="txt">
+          <div class="t">Node.js と npm</div>
+          <div class="d">opencodex の実行に Node.js 18 以上が必要です。</div>
+        </div>
+        <div class="act"></div>
+      </div>
+
+      <div class="check" id="chk-ocx">
+        <div class="mark wait">…</div>
+        <div class="txt">
+          <div class="t">opencodex（ocx）</div>
+          <div class="d">Codex と Azure の間をつなぐローカルプロキシです。ユーザー領域に導入します。</div>
+        </div>
+        <div class="act"></div>
+      </div>
+
+      <div class="check" id="chk-svc">
+        <div class="mark wait">…</div>
+        <div class="txt">
+          <div class="t">バックグラウンドサービス</div>
+          <div class="d">Windows にサービスとして登録します。登録時に「ユーザーアカウント制御」の確認が表示されます。</div>
+        </div>
+        <div class="act"></div>
+      </div>
+
+      <div class="setup-foot">
+        <button class="btn primary big" id="setupMainBtn">Azure にサインイン</button>
+        <span class="note" id="setupNote">サインインするとブラウザーが開きます。</span>
+        <span style="margin-left:auto"><button class="btn subtle" data-goto="settings">設定を開く</button></span>
+      </div>
+    </section>
+
+    <!-- ================= ホーム ================= -->
+    <section id="scr-home" hidden style="flex:1;min-height:0;display:flex;flex-direction:column">
+      <div class="apphead">
+        <div>
+          <h1>Codex で使えるモデル</h1>
+          <div class="sub" id="homeSub">2 つの Azure リソースから 5 件を公開しています</div>
+        </div>
+        <div class="spacer"></div>
+        <button class="btn" data-goto="settings">設定</button>
+        <button class="btn primary" id="btnAddModel">＋ モデルを追加</button>
+      </div>
+
+      <div class="banner" id="diffBanner" hidden>
+        <span class="ico">●</span>
+        <span>未反映の変更が <b>2 件</b> あります（gpt-5-mini の追加、gpt-5 の Capacity 変更）</span>
+        <span class="spacer"></span>
+        <button class="btn" id="btnDiscardDiff">変更を破棄</button>
+        <button class="btn primary" id="btnSyncFromBanner">Codex へ反映</button>
+      </div>
+
+      <div class="home-main" id="homeMain">
+        <div class="list-pane" id="listPane"><!-- JS で描画 --></div>
+        <aside class="detail" id="detailPane" hidden></aside>
+      </div>
+
+      <div class="empty" id="homeEmpty" hidden>
+        <div class="glyph">＋</div>
+        <p>Codex に公開しているモデルはまだありません。Azure のモデルを追加すると、Codex から選べるようになります。</p>
+        <button class="btn primary big" id="btnAddModelEmpty">＋ モデルを追加</button>
+      </div>
+    </section>
+
+    <!-- ================= 設定 ================= -->
+    <section id="scr-settings" hidden style="flex:1;min-height:0;display:flex;flex-direction:column">
+      <div class="apphead">
+        <div>
+          <h1>設定</h1>
+          <div class="sub">環境の状態と、ふだんは触らない操作</div>
+        </div>
+        <div class="spacer"></div>
+        <button class="btn" data-goto="home">ホームに戻る</button>
+      </div>
+      <div class="settings">
+        <h2>準備の状態</h2>
+        <div class="srow">
+          <span class="badge ok"><span class="dot"></span>正常</span>
+          <div class="txt">
+            <div class="t">Azure サインイン</div>
+            <div class="d">atsushi_a_nakamura@jp.ricoh.com ／ テナント: Contoso Corp ／ サブスクリプション: Prod-AI (0f3a…9c21)</div>
+          </div>
+          <button class="btn">アカウントを切り替え</button>
+        </div>
+        <div class="srow">
+          <span class="badge ok"><span class="dot"></span>正常</span>
+          <div class="txt">
+            <div class="t">Node.js / npm</div>
+            <div class="d">Node.js v20.14.0 ／ npm 10.7.0</div>
+          </div>
+        </div>
+        <div class="srow">
+          <span class="badge ok"><span class="dot"></span>v0.9.3</span>
+          <div class="txt">
+            <div class="t">opencodex（ocx）</div>
+            <div class="d">最新は v0.9.5 です。更新すると数十秒サービスが停止します。</div>
+          </div>
+          <button class="btn">更新</button>
+        </div>
+        <div class="srow">
+          <span class="badge ok"><span class="dot"></span>実行中</span>
+          <div class="txt">
+            <div class="t">バックグラウンドサービス</div>
+            <div class="d">ポート 8123 で待ち受け中。修復には管理者の確認（UAC）が必要です。</div>
+          </div>
+          <button class="btn">サービスを修復</button>
+        </div>
+
+        <h2>接続</h2>
+        <div class="srow">
+          <div class="txt">
+            <div class="t">opencodex のポート</div>
+            <div class="d">Codex から見る接続先。変更するとサービスを再起動します。</div>
+          </div>
+          <div style="flex:0 0 110px"><input type="number" value="8123"></div>
+          <button class="btn">変更を適用</button>
+        </div>
+        <div class="srow">
+          <div class="txt">
+            <div class="t">Codex を再起動して反映</div>
+            <div class="d">Codex はモデル一覧を起動時に読み込みます。追加が見えないときはここから再起動します。</div>
+          </div>
+          <button class="btn">Codex を再起動</button>
+        </div>
+
+        <h2>その他</h2>
+        <div class="srow">
+          <div class="txt">
+            <div class="t">診断情報をコピー</div>
+            <div class="d">バージョン、サービス状態、直近のエラーをまとめてクリップボードへ。</div>
+          </div>
+          <button class="btn">コピー</button>
+        </div>
+        <div class="srow">
+          <div class="txt">
+            <div class="t">準備チェックリストをやり直す</div>
+            <div class="d">環境を再検出し、初回と同じ画面を表示します。</div>
+          </div>
+          <button class="btn" data-goto="setup-first">開く</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= モーダル層 ================= -->
+    <div id="overlay"></div>
+
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ============ ダミーデータ ============ */
+  var resources = [
+    {id:"foundry-prod", label:"rg-ai / foundry-prod", region:"japaneast"},
+    {id:"aoai-dev",     label:"rg-dev / aoai-dev",    region:"eastus2"}
+  ];
+
+  var deployments = [
+    {id:"d1", res:"foundry-prod", name:"gpt-5-codex", model:"gpt-5-codex", ver:"2025-08-07",
+     sku:"GlobalStandard", cap:"500K TPM", state:"ok", def:true, policy:"マイナーバージョンを自動更新"},
+    {id:"d2", res:"foundry-prod", name:"gpt-5-high", model:"gpt-5", ver:"2025-08-07",
+     sku:"GlobalStandard", cap:"1,000K TPM", state:"ok", def:false, policy:"マイナーバージョンを自動更新"},
+    {id:"d3", res:"foundry-prod", name:"gpt-5-mini", model:"gpt-5-mini", ver:"2025-08-07",
+     sku:"GlobalStandard", cap:"250K TPM", state:"pending", def:false, policy:"更新しない"},
+    {id:"d4", res:"aoai-dev", name:"o4-mini-dev", model:"o4-mini", ver:"2025-04-16",
+     sku:"Standard", cap:"120K TPM", state:"failed", def:false, policy:"更新しない",
+     err:"403 AuthorizationFailed — 呼び出し元にこのリソースへの Cognitive Services User 権限がありません。"},
+    {id:"d5", res:"aoai-dev", name:"gpt-5-nano-test", model:"gpt-5-nano", ver:"2025-08-07",
+     sku:"Standard", cap:"60K TPM", state:"creating", def:false, policy:"更新しない"}
+  ];
+
+  var stateMeta = {
+    ok:      {cls:"ok",   text:"Codex で利用可"},
+    pending: {cls:"warn", text:"反映待ち"},
+    failed:  {cls:"err",  text:"接続失敗"},
+    creating:{cls:"busy", text:"作成中"}
+  };
+
+  /* ============ 画面切替 ============ */
+  var overlay = document.getElementById("overlay");
+  var sel = document.getElementById("screenSelect");
+  var current = "home";
+
+  function show(id, on){ document.getElementById(id).hidden = !on; }
+
+  function render(screen){
+    current = screen;
+    if (sel.value !== screen) sel.value = screen;
+    overlay.innerHTML = "";
+
+    var isSetup = screen.indexOf("setup") === 0;
+    var isSettings = screen === "settings";
+    show("scr-setup", isSetup);
+    show("scr-settings", isSettings);
+    show("scr-home", !isSetup && !isSettings);
+
+    if (isSetup) { renderSetup(screen === "setup-almost"); return; }
+    if (isSettings) return;
+
+    /* ホーム系 */
+    var empty = screen === "home-empty";
+    show("homeEmpty", empty);
+    document.getElementById("homeMain").hidden = empty;
+    document.getElementById("diffBanner").hidden = !(screen === "home-diff");
+    document.getElementById("btnAddModel").hidden = empty;
+    document.getElementById("homeSub").textContent = empty
+      ? "公開しているモデルはありません"
+      : "2 つの Azure リソースから 5 件を公開しています";
+    if (!empty) renderList(screen === "home-detail" ? "d1" : null);
+
+    if (screen === "add-modal")   openAddModal();
+    if (screen === "sync-confirm")  openConfirm("sync");
+    if (screen === "sync-progress") openProgress(2, null);
+    if (screen === "sync-result")   openResult();
+  }
+
+  sel.addEventListener("change", function(){ render(sel.value); });
+  document.addEventListener("click", function(e){
+    var g = e.target.closest("[data-goto]");
+    if (g) render(g.getAttribute("data-goto"));
+  });
+
+  /* ============ ホーム一覧 ============ */
+  function badge(state){
+    var m = stateMeta[state];
+    return '<span class="badge '+m.cls+'"><span class="dot"></span>'+m.text+'</span>';
+  }
+
+  function renderList(selectedId){
+    var pane = document.getElementById("listPane");
+    var html = "";
+    resources.forEach(function(r){
+      var rows = deployments.filter(function(d){ return d.res === r.id; });
+      if (!rows.length) return;
+      html += '<div class="group"><div class="group-head">'
+            + '<span class="res">'+r.label+'</span>'
+            + '<span class="region">'+r.region+'</span>'
+            + '<span class="tiny muted">'+rows.length+' 件</span></div>';
+      rows.forEach(function(d){
+        html += '<div class="row'+(d.id===selectedId?" selected":"")+'" data-dep="'+d.id+'">'
+              + '<span class="star'+(d.def?"":" off")+'" title="'+(d.def?"既定のモデル":"既定にする")+'">★</span>'
+              + '<div class="name"><div class="n">'+d.name+'</div>'
+              + '<div class="m">'+d.model+' · '+d.ver+'</div></div>'
+              + '<div class="sku">'+d.sku+' · '+d.cap+'</div>'
+              + '<div class="state">'+badge(d.state)+'</div>'
+              + '<button class="btn icon more" title="その他の操作">…</button>'
+              + '</div>';
+      });
+      html += "</div>";
+    });
+    pane.innerHTML = html;
+
+    pane.querySelectorAll(".row").forEach(function(el){
+      el.addEventListener("click", function(){
+        renderList(el.getAttribute("data-dep"));
+      });
+    });
+
+    var det = document.getElementById("detailPane");
+    if (!selectedId) { det.hidden = true; det.innerHTML = ""; return; }
+    det.hidden = false;
+    renderDetail(selectedId);
+  }
+
+  function renderDetail(id){
+    var d = deployments.filter(function(x){return x.id===id;})[0];
+    var r = resources.filter(function(x){return x.id===d.res;})[0];
+    var det = document.getElementById("detailPane");
+    var errBlock = d.state === "failed"
+      ? '<div class="notice err"><span>⚠</span><div>'+d.err+'</div></div>'
+        + '<button class="btn" style="margin-top:10px;width:100%">管理者への権限依頼文をコピー</button>'
+      : "";
+
+    det.innerHTML =
+      '<div class="detail-head">'
+      + '<div class="t">'+d.name+'</div>'
+      + '<div class="s">'+r.label+' · '+r.region+'</div>'
+      + '<div style="margin-top:9px">'+badge(d.state)+'</div>'
+      + '</div>'
+      + '<div class="detail-body">'
+      +   errBlock
+      +   '<div class="field" style="margin-top:'+(errBlock?"16px":"0")+'"><label>モデル</label>'
+      +     '<div class="val">'+d.model+'</div></div>'
+      +   '<div class="field"><label>バージョン</label>'
+      +     '<select><option>'+d.ver+'（現在）</option><option>2025-06-12</option></select></div>'
+      +   '<div class="field"><label>自動更新ポリシー</label>'
+      +     '<select><option>'+d.policy+'</option><option>更新しない</option>'
+      +     '<option>マイナーバージョンを自動更新</option><option>常に最新へ更新</option></select></div>'
+      +   '<div class="field"><label>SKU</label><div class="val">'+d.sku+'</div></div>'
+      +   '<div class="field"><label>Capacity（'+d.cap.split(" ")[1]+'）</label>'
+      +     '<div class="capline"><input type="range" min="10" max="1000" value="'
+      +       parseInt(d.cap.replace(/[^0-9]/g,""),10) + '">'
+      +     '<div class="num"><input type="text" value="'+d.cap.split(" ")[0]+'"></div></div>'
+      +     '<div class="tiny muted" style="margin-top:6px">変更は「Codex へ反映」で Azure に適用されます。</div>'
+      +   '</div>'
+      + '</div>'
+      + '<div class="detail-foot">'
+      +   '<button class="btn primary" id="detailApply">変更を保存して Codex へ反映</button>'
+      +   '<div style="display:flex;gap:8px">'
+      +     '<button class="btn" style="flex:1"'+(d.def?" disabled":"")+'>既定に設定</button>'
+      +     '<button class="btn" style="flex:1">Azure Portal で開く</button>'
+      +   '</div>'
+      +   '<button class="btn danger-text">Codex から外す</button>'
+      + '</div>';
+
+    var ap = document.getElementById("detailApply");
+    if (ap) ap.addEventListener("click", function(){ openConfirm("sync"); });
+  }
+
+  /* ============ セットアップ ============ */
+  var setupSteps = [
+    {el:"chk-azure", need:true},
+    {el:"chk-node",  need:false},
+    {el:"chk-ocx",   need:false},
+    {el:"chk-svc",   need:true}
+  ];
+
+  function setMark(id, kind, glyph){
+    var c = document.getElementById(id);
+    var m = c.querySelector(".mark");
+    m.className = "mark " + kind;
+    m.textContent = glyph;
+  }
+  function setAct(id, html){ document.getElementById(id).querySelector(".act").innerHTML = html; }
+
+  function renderSetup(almost){
+    var title = document.getElementById("setupTitle");
+    var lead  = document.getElementById("setupLead");
+    var btn   = document.getElementById("setupMainBtn");
+    var note  = document.getElementById("setupNote");
+
+    if (!almost){
+      title.textContent = "はじめる準備";
+      lead.textContent = "Azure のモデルを Codex から使えるようにするために、4 つの項目を確認します。自動でできることは Bridge が行います。";
+      setMark("chk-azure","need","!"); setAct("chk-azure",'<span class="badge warn"><span class="dot"></span>承認が必要</span>');
+      setMark("chk-node","done","✓");  setAct("chk-node",'<span class="tiny muted">v20.14.0 / npm 10.7.0</span>');
+      setMark("chk-ocx","wait","…");   setAct("chk-ocx",'<span class="tiny muted">Azure サインイン後に確認します</span>');
+      setMark("chk-svc","wait","…");   setAct("chk-svc",'<span class="tiny muted">opencodex 導入後に登録します</span>');
+      btn.textContent = "Azure にサインイン";
+      note.textContent = "既定のブラウザーが開きます。承認が終わると自動で次に進みます。";
+    } else {
+      title.textContent = "あと少しです";
+      lead.textContent = "サービスの登録まで終わりました。モデルを追加すると Codex から使えるようになります。";
+      setMark("chk-azure","done","✓"); setAct("chk-azure",'<span class="tiny muted">atsushi_a_nakamura@jp.ricoh.com</span>');
+      setMark("chk-node","done","✓");  setAct("chk-node",'<span class="tiny muted">v20.14.0 / npm 10.7.0</span>');
+      setMark("chk-ocx","done","✓");   setAct("chk-ocx",'<span class="tiny muted">v0.9.3 を導入しました</span>');
+      setMark("chk-svc","done","✓");   setAct("chk-svc",'<span class="badge ok"><span class="dot"></span>実行中 · ポート 8123</span>');
+      btn.textContent = "モデルを追加して始める";
+      note.textContent = "すべての準備が整いました。";
+    }
+
+    btn.onclick = function(){
+      if (!almost){
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span> ブラウザーでの承認を待っています…';
+        setMark("chk-azure","run","●");
+        setAct("chk-azure",'<span class="badge busy"><span class="dot"></span>承認待ち</span>');
+        setTimeout(function(){ btn.disabled=false; render("setup-almost"); }, 1400);
+      } else {
+        render("home-empty");
+        setTimeout(openAddModal, 120);
+      }
+    };
+  }
+
+  /* ============ モーダル基盤 ============ */
+  function mount(html){
+    overlay.innerHTML = '<div class="scrim">'+html+'</div>';
+    return overlay.querySelector(".modal");
+  }
+  function closeModal(){
+    overlay.innerHTML = "";
+    if (["add-modal","sync-confirm","sync-progress","sync-result"].indexOf(current) >= 0){
+      render("home");
+    }
+  }
+
+  /* ============ モデル追加モーダル ============ */
+  var models = [
+    {id:"gpt-5-codex", rec:true,  meta:"コーディング特化 · 2025-08-07"},
+    {id:"gpt-5",       rec:true,  meta:"汎用 · 2025-08-07"},
+    {id:"gpt-5-mini",  rec:false, meta:"低コスト · 2025-08-07"},
+    {id:"gpt-5-nano",  rec:false, meta:"最小 · 2025-08-07"},
+    {id:"o4-mini",     rec:false, meta:"推論 · 2025-04-16"}
+  ];
+
+  var unpublished = [
+    {name:"gpt-5-codex-2", res:"rg-ai / foundry-prod", model:"gpt-5-codex · 2025-08-07", sku:"GlobalStandard · 300K TPM"},
+    {name:"gpt-41-legacy", res:"rg-ai / foundry-prod", model:"gpt-4.1 · 2025-04-14",     sku:"Standard · 200K TPM"},
+    {name:"o4-mini-eval",  res:"rg-dev / aoai-dev",    model:"o4-mini · 2025-04-16",     sku:"Standard · 80K TPM"}
+  ];
+
+  function openAddModal(tab){
+    tab = tab || "new";
+    var isNew = tab === "new";
+
+    var opts = models.map(function(m,i){
+      return '<div class="opt'+(i===0?" sel":"")+'" data-model="'+m.id+'">'
+           + '<span>'+m.id+'</span>'
+           + (m.rec?'<span class="rec">推奨</span>':'')
+           + '<span class="meta">'+m.meta+'</span></div>';
+    }).join("");
+
+    var newTabBody =
+      '<div class="grid2">'
+      + '<div class="field"><label>Azure リソース</label>'
+      +   '<select><option>rg-ai / foundry-prod（japaneast）</option>'
+      +   '<option>rg-dev / aoai-dev（eastus2）</option></select>'
+      +   '<div class="tiny muted" style="margin-top:5px">前回と同じリソースを選んでいます。</div></div>'
+      + '<div class="field"><label>デプロイ名</label>'
+      +   '<input type="text" id="depName" value="gpt-5-codex">'
+      +   '<div class="tiny muted" style="margin-top:5px">モデル名から自動で入ります。Codex にはこの名前で表示されます。</div></div>'
+      + '</div>'
+      + '<div class="field"><label>モデル（Codex 対応のみ）</label>'
+      +   '<div class="modelpick">'
+      +     '<input class="search" type="text" placeholder="モデルを検索">'
+      +     '<div class="opts">'+opts+'</div>'
+      +   '</div></div>'
+      + '<div class="field"><label>Capacity（TPM）</label>'
+      +   '<div class="capline">'
+      +     '<input type="range" id="capRange" min="10" max="1000" step="10" value="500">'
+      +     '<div class="num"><input type="text" id="capNum" value="500"><span class="tiny muted">K TPM</span></div>'
+      +   '</div>'
+      +   '<div class="presets">'
+      +     '<button class="chip" data-cap="100">100K</button>'
+      +     '<button class="chip" data-cap="250">250K</button>'
+      +     '<button class="chip on" data-cap="500">500K（既定）</button>'
+      +     '<button class="chip" data-cap="1000">1,000K</button>'
+      +   '</div>'
+      +   '<div class="tiny muted" style="margin-top:7px">SKU が PTU の場合、単位は自動で PTU に切り替わります。</div>'
+      + '</div>'
+      + '<details class="adv"><summary>詳細設定（バージョン・SKU・自動更新）</summary><div class="inner grid2">'
+      +   '<div class="field"><label>バージョン</label>'
+      +     '<select><option>2025-08-07（最新）</option><option>2025-06-12</option></select></div>'
+      +   '<div class="field"><label>SKU</label>'
+      +     '<select><option>GlobalStandard</option><option>Standard</option>'
+      +     '<option>DataZoneStandard</option><option>ProvisionedManaged（PTU）</option></select></div>'
+      +   '<div class="field" style="grid-column:1/-1"><label>自動更新ポリシー</label>'
+      +     '<select><option>マイナーバージョンを自動更新（推奨）</option>'
+      +     '<option>更新しない</option><option>常に最新へ更新</option></select></div>'
+      + '</div></details>';
+
+    var existingBody =
+      '<p class="tiny muted" style="margin:0 0 12px">Azure にあるが Codex に公開していないデプロイです。公開するものを選んでください。</p>'
+      + '<table class="pubtable"><thead><tr>'
+      + '<th style="width:32px"></th><th>デプロイ名</th><th>モデル</th><th>SKU / Capacity</th></tr></thead><tbody>'
+      + unpublished.map(function(u,i){
+          return '<tr><td><input type="checkbox"'+(i===0?" checked":"")+'></td>'
+               + '<td><b>'+u.name+'</b><div class="tiny muted">'+u.res+'</div></td>'
+               + '<td>'+u.model+'</td><td class="tiny muted">'+u.sku+'</td></tr>';
+        }).join("")
+      + '</tbody></table>';
+
+    var m = mount(
+      '<div class="modal wide">'
+      + '<div class="modal-head">'
+      +   '<h2>モデルを追加</h2>'
+      +   '<div class="s">Azure の Model Deployment を Codex から使えるようにします。</div>'
+      +   '<div class="tabs">'
+      +     '<button class="tab'+(isNew?" active":"")+'" data-tab="new">新しく作成</button>'
+      +     '<button class="tab'+(isNew?"":" active")+'" data-tab="exist">既存のデプロイを公開</button>'
+      +   '</div>'
+      + '</div>'
+      + '<div class="modal-body">'+(isNew?newTabBody:existingBody)+'</div>'
+      + '<div class="modal-foot">'
+      +   '<span class="tiny muted">Azure に作成すると課金が発生します。</span>'
+      +   '<span class="spacer"></span>'
+      +   '<button class="btn" data-close>キャンセル</button>'
+      +   '<button class="btn primary" id="addNext">'+(isNew?"作成して Codex へ反映":"Codex へ反映")+'</button>'
+      + '</div></div>'
+    );
+
+    m.querySelectorAll(".tab").forEach(function(t){
+      t.addEventListener("click", function(){ openAddModal(t.getAttribute("data-tab")); });
+    });
+    m.querySelectorAll(".opt").forEach(function(o){
+      o.addEventListener("click", function(){
+        m.querySelectorAll(".opt").forEach(function(x){x.classList.remove("sel");});
+        o.classList.add("sel");
+        var n = document.getElementById("depName");
+        if (n) n.value = o.getAttribute("data-model");
+      });
+    });
+    var range = m.querySelector("#capRange"), num = m.querySelector("#capNum");
+    if (range){
+      range.addEventListener("input", function(){
+        num.value = range.value;
+        m.querySelectorAll(".chip").forEach(function(c){
+          c.classList.toggle("on", c.getAttribute("data-cap") === range.value);
+        });
+      });
+      m.querySelectorAll(".chip").forEach(function(c){
+        c.addEventListener("click", function(){
+          m.querySelectorAll(".chip").forEach(function(x){x.classList.remove("on");});
+          c.classList.add("on");
+          range.value = c.getAttribute("data-cap");
+          num.value = range.value;
+        });
+      });
+    }
+    m.querySelector("[data-close]").addEventListener("click", closeModal);
+    m.querySelector("#addNext").addEventListener("click", function(){
+      openConfirm(isNew ? "create" : "sync");
+    });
+  }
+
+  /* ============ 確認ステップ ============ */
+  function openConfirm(kind){
+    var isCreate = kind === "create";
+    var rows = isCreate
+      ? '<dl>'
+      +   '<dt>Azure リソース</dt><dd>rg-ai / foundry-prod（japaneast）</dd>'
+      +   '<dt>作成するデプロイ</dt><dd><b>gpt-5-codex</b></dd>'
+      +   '<dt>モデル</dt><dd>gpt-5-codex · 2025-08-07</dd>'
+      +   '<dt>SKU / Capacity</dt><dd>GlobalStandard · 500K TPM</dd>'
+      +   '<dt>自動更新</dt><dd>マイナーバージョンを自動更新</dd>'
+      + '</dl>'
+      : '<dl>'
+      +   '<dt>反映するもの</dt><dd><b>gpt-5-mini</b> を Codex に公開<br><b>gpt-5</b> の Capacity を 500K → 1,000K TPM に変更</dd>'
+      +   '<dt>対象リソース</dt><dd>rg-ai / foundry-prod（japaneast）</dd>'
+      +   '<dt>opencodex</dt><dd>Provider「azure-foundry-prod」を更新</dd>'
+      + '</dl>';
+
+    var m = mount(
+      '<div class="modal">'
+      + '<div class="modal-head"><h2>実行する内容の確認</h2>'
+      +   '<div class="s">次の内容で Azure と opencodex を更新します。</div></div>'
+      + '<div class="modal-body">'
+      +   '<div class="summary-box">'+rows+'</div>'
+      +   '<div class="notice warn"><span>⚠</span><div>反映後の接続テストは Azure に実際のリクエストを送ります。ごく少額ですが<b>課金が発生します</b>。'
+      +     (isCreate?' また、デプロイの作成自体も課金対象です。':'')+'</div></div>'
+      +   '<label class="chk"><input type="checkbox" checked>'
+      +     '<span>反映後に <b>Codex を再起動</b>する（Codex はモデル一覧を起動時に読み込むため、再起動しないと新しいモデルが表示されないことがあります）</span></label>'
+      + '</div>'
+      + '<div class="modal-foot"><span class="spacer"></span>'
+      +   '<button class="btn" data-back>戻る</button>'
+      +   '<button class="btn primary" id="goRun">'+(isCreate?"作成して反映する":"反映する")+'</button>'
+      + '</div></div>'
+    );
+    m.querySelector("[data-back]").addEventListener("click", function(){
+      if (isCreate) openAddModal("new"); else closeModal();
+    });
+    m.querySelector("#goRun").addEventListener("click", function(){ runProgress(isCreate); });
+  }
+
+  /* ============ 進行状況 ============ */
+  var stepDefs = [
+    {t:"Azure に Model Deployment を作成", d:"gpt-5-codex（GlobalStandard · 500K TPM）"},
+    {t:"opencodex の Provider を更新",     d:"azure-foundry-prod にエンドポイントと API キーを登録"},
+    {t:"Codex のカタログを同期",           d:"モデル一覧を書き出して Codex に読み込ませる"},
+    {t:"接続テスト",                       d:"各デプロイに小さなリクエストを 1 回送信"}
+  ];
+
+  function progressHtml(activeIndex, failIndex){
+    var pct = Math.round((activeIndex / stepDefs.length) * 100);
+    var lis = stepDefs.map(function(s, i){
+      var cls, glyph, tail;
+      if (failIndex !== null && i === failIndex){ cls="fail"; glyph="✕"; tail='<span class="time">失敗</span>'; }
+      else if (i < activeIndex){ cls="done"; glyph="✓"; tail='<span class="time">完了</span>'; }
+      else if (i === activeIndex){ cls="run"; glyph="●"; tail='<span class="spinner dark"></span>'; }
+      else { cls="pend"; glyph=""; tail=""; }
+      return '<li><span class="ic '+cls+'">'+glyph+'</span>'
+           + '<span class="lbl"><span class="t">'+s.t+'</span><span class="d">'+s.d+'</span></span>'
+           + tail + '</li>';
+    }).join("");
+    return '<div class="progressbar"><i style="width:'+pct+'%"></i></div><ul class="steps">'+lis+'</ul>';
+  }
+
+  function openProgress(activeIndex, failIndex){
+    mount(
+      '<div class="modal">'
+      + '<div class="modal-head"><h2>反映しています</h2>'
+      +   '<div class="s">完了するまで数十秒かかります。ウィンドウは閉じずにお待ちください。</div></div>'
+      + '<div class="modal-body" id="progBody">'+progressHtml(activeIndex, failIndex)+'</div>'
+      + '<div class="modal-foot"><span class="tiny muted">手順 '+Math.min(activeIndex+1,4)+' / 4</span>'
+      +   '<span class="spacer"></span><button class="btn" disabled>閉じる</button></div>'
+      + '</div>'
+    );
+  }
+
+  function runProgress(){
+    openProgress(0, null);
+    var i = 0;
+    var timer = setInterval(function(){
+      i++;
+      if (i >= stepDefs.length){ clearInterval(timer); openResult(); return; }
+      var body = document.getElementById("progBody");
+      if (!body){ clearInterval(timer); return; }
+      body.innerHTML = progressHtml(i, null);
+      var foot = overlay.querySelector(".modal-foot .tiny");
+      if (foot) foot.textContent = "手順 " + (i+1) + " / 4";
+    }, 900);
+  }
+
+  /* ============ 結果 ============ */
+  function openResult(){
+    var m = mount(
+      '<div class="modal">'
+      + '<div class="modal-head"><h2>反映が完了しました（1 件失敗）</h2>'
+      +   '<div class="s">3 件のうち 2 件が Codex で使えるようになりました。</div></div>'
+      + '<div class="modal-body">'
+      +   '<div class="result-row">'
+      +     '<span class="badge ok"><span class="dot"></span>成功</span>'
+      +     '<div class="txt"><div class="t">gpt-5-codex</div>'
+      +       '<div class="d">rg-ai / foundry-prod · 接続テスト 応答 842 ms</div></div></div>'
+      +   '<div class="result-row">'
+      +     '<span class="badge ok"><span class="dot"></span>成功</span>'
+      +     '<div class="txt"><div class="t">gpt-5-mini</div>'
+      +       '<div class="d">rg-ai / foundry-prod · 接続テスト 応答 610 ms</div></div></div>'
+      +   '<div class="result-row" style="border-color:#f3cfcb">'
+      +     '<span class="badge err"><span class="dot"></span>失敗</span>'
+      +     '<div class="txt"><div class="t">o4-mini-dev</div>'
+      +       '<div class="d">rg-dev / aoai-dev · <b>403 AuthorizationFailed</b><br>'
+      +       'このリソースに対する「Cognitive Services User」権限がありません。リソース所有者に権限の付与を依頼してください。</div>'
+      +       '<div style="margin-top:10px;display:flex;gap:8px">'
+      +         '<button class="btn">管理者への権限依頼文をコピー</button>'
+      +         '<button class="btn subtle">Azure Portal で開く</button>'
+      +       '</div></div></div>'
+      +   '<div class="notice info"><span>ℹ</span><div>Codex を再起動しました。Codex のモデル選択に新しい 2 件が表示されます。</div></div>'
+      + '</div>'
+      + '<div class="modal-foot"><span class="spacer"></span>'
+      +   '<button class="btn" id="retryFailed">失敗した 1 件を再試行</button>'
+      +   '<button class="btn primary" id="resultDone">完了</button>'
+      + '</div></div>'
+    );
+    m.querySelector("#resultDone").addEventListener("click", function(){
+      overlay.innerHTML = "";
+      render("home");
+    });
+    m.querySelector("#retryFailed").addEventListener("click", function(){ runProgress(); });
+  }
+
+  /* ============ ホームのボタン配線 ============ */
+  document.getElementById("btnAddModel").addEventListener("click", function(){ openAddModal("new"); });
+  document.getElementById("btnAddModelEmpty").addEventListener("click", function(){ openAddModal("new"); });
+  document.getElementById("btnSyncFromBanner").addEventListener("click", function(){ openConfirm("sync"); });
+  document.getElementById("btnDiscardDiff").addEventListener("click", function(){ render("home"); });
+
+  render("home");
+})();
+</script>
+</body>
+</html>

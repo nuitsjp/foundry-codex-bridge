@@ -30,11 +30,11 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
-build/bin/
-frontend/dist/
-frontend/node_modules/
-frontend/wailsjs/
-frontend/package.json.md5
+poc/build/bin/
+poc/frontend/dist/
+poc/frontend/node_modules/
+poc/frontend/wailsjs/
+poc/frontend/package.json.md5
 
 *.exe
 *.test.exe
