@@ -140,7 +140,7 @@
   }
 
   .row{
-    display:flex;align-items:center;gap:12px;padding:10px 20px;margin:0 10px;
+    display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:10px 20px;margin:0 10px;
     border-radius:var(--radius);cursor:pointer;border:1px solid transparent;
   }
   .row:hover{background:var(--surface-3)}
@@ -150,16 +150,39 @@
   .row .name{flex:0 0 200px;min-width:0}
   .row .name .n{font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .row .name .m{font-size:12px;color:var(--text-2);margin-top:1px}
-  .row .sku{flex:0 0 210px;font-size:12px;color:var(--text-2)}
-  .row .state{flex:0 0 150px}
+  .row .sku{flex:0 0 185px;font-size:12px;color:var(--text-2)}
+  .row .state{flex:0 0 140px;min-width:0}
   .row .acts{margin-left:auto;display:flex;align-items:center;gap:2px}
   .row.staged{background:#fcfbf7}
   .row.staged:hover{background:#f7f5ef}
-  .row.staged-del .name .n,.row.staged-del .sku{text-decoration:line-through}
-  .row.staged-del{opacity:.62}
-  .row.staged{flex-wrap:wrap}
   .row .chg{flex:0 0 100%;font-size:12px;color:var(--warn);margin:3px 0 0 28px}
   .btn.tinybtn{font-size:12px;padding:4px 8px}
+  .badge.small{font-size:11px;padding:1px 7px}
+
+  /* 未公開行は視覚的に後退させる */
+  .row.unpub .name .n{font-weight:500;color:var(--text-2)}
+  .row.unpub .name .m,.row.unpub .sku{color:var(--text-3)}
+
+  /* Codex で使うトグル */
+  .switch{display:inline-flex;align-items:center;gap:7px;cursor:pointer;font-size:12px;color:var(--text-2)}
+  .switch input{position:absolute;opacity:0;width:0;height:0}
+  .switch .track{
+    width:36px;height:19px;border-radius:10px;background:#c4c4c4;position:relative;
+    transition:background .15s;flex:0 0 36px;display:inline-block;
+  }
+  .switch .track::after{
+    content:"";position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;
+    background:#fff;transition:transform .15s;box-shadow:0 1px 2px rgba(0,0,0,.28);
+  }
+  .switch input:checked + .track{background:var(--accent)}
+  .switch input:checked + .track::after{transform:translateX(17px)}
+  .switch input:focus-visible + .track{outline:2px solid var(--accent);outline-offset:2px}
+  .switch.off{opacity:.45;cursor:default}
+  .switch.off .track{background:#e0e0e0}
+
+  .detail-sec{border-top:1px solid var(--line);margin-top:4px;padding-top:14px}
+  .detail-sec:first-child{border-top:0;margin-top:0;padding-top:0}
+  .detail-sec > .h{font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:10px}
 
   /* ---------- 詳細パネル ---------- */
   .detail{
@@ -370,6 +393,8 @@
     <option value="home-diff">ホーム（差分あり）</option>
     <option value="home-detail">詳細パネル表示</option>
     <option value="add-modal">モデル追加モーダル</option>
+    <option value="az-create">Azure 作成中</option>
+    <option value="az-confirm">Azure 変更の確認</option>
     <option value="sync-confirm">反映の確認</option>
     <option value="sync-progress">反映の進行中</option>
     <option value="sync-result">反映の結果（1件失敗）</option>
@@ -449,10 +474,14 @@
     <section id="scr-home" hidden style="flex:1;min-height:0;display:flex;flex-direction:column">
       <div class="apphead">
         <div>
-          <h1>Codex で使えるモデル</h1>
-          <div class="sub" id="homeSub">2 つの Azure リソースから 5 件を公開しています</div>
+          <h1>Azure の Model Deployment</h1>
+          <div class="sub" id="homeSub">2 つの Azure リソース / Deployment 7 件 / Codex に公開 4 件</div>
         </div>
         <div class="spacer"></div>
+        <label class="tiny muted" id="filterPubLabel"
+               style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-right:4px">
+          <input type="checkbox" id="filterPub" style="width:14px;height:14px">Codex で使うものだけ表示
+        </label>
         <button class="btn" data-goto="settings">設定</button>
         <button class="btn primary" id="btnAddModel">＋ モデルを追加</button>
       </div>
@@ -472,7 +501,7 @@
 
       <div class="empty" id="homeEmpty" hidden>
         <div class="glyph">＋</div>
-        <p>Codex に公開しているモデルはまだありません。Azure のモデルを追加すると、Codex から選べるようになります。</p>
+        <p>接続中の Azure リソースに Model Deployment がありません。モデルを追加すると、ここに一覧が表示されます。</p>
         <button class="btn primary big" id="btnAddModelEmpty">＋ モデルを追加</button>
       </div>
     </section>
@@ -606,89 +635,113 @@
     {id:"foundry-prod",   name:"foundry-prod",   rg:"rg-ai",  region:"japaneast", kind:"Foundry",
      localAuth:true,  connected:true,  published:3},
     {id:"aoai-dev",       name:"aoai-dev",       rg:"rg-dev", region:"eastus2",   kind:"Azure OpenAI",
-     localAuth:true,  connected:true,  published:2},
+     localAuth:true,  connected:true,  published:1},
     {id:"foundry-secure", name:"foundry-secure", rg:"rg-sec", region:"japaneast", kind:"Foundry",
      localAuth:false, connected:false, published:0}
   ];
 
+  /* Deployment: Azure 側の実体。pub = 現在 Codex に公開済みか（Codex 層の確定状態）。
+     stage = "pub" | "unpub"（Codex 層の未反映トグル）、stageDef = 既定モデル変更の未反映。
+     azState = "ok" | "creating"（Azure 層は即時実行なのでステージングしない）。 */
   function makeDeployments(){
     return [
       {id:"d1", res:"foundry-prod", name:"gpt-5-codex", model:"gpt-5-codex", ver:"2025-08-07",
-       sku:"GlobalStandard", cap:"500K TPM", state:"ok", def:true, policy:"マイナーバージョンを自動更新"},
+       sku:"GlobalStandard", cap:"500K TPM", azState:"ok", codexOk:true, pub:true,
+       codexState:"ok", def:true, policy:"マイナーバージョンを自動更新"},
       {id:"d2", res:"foundry-prod", name:"gpt-5-high", model:"gpt-5", ver:"2025-08-07",
-       sku:"GlobalStandard", cap:"500K TPM", state:"ok", def:false, policy:"マイナーバージョンを自動更新"},
+       sku:"GlobalStandard", cap:"500K TPM", azState:"ok", codexOk:true, pub:true,
+       codexState:"ok", def:false, policy:"マイナーバージョンを自動更新"},
       {id:"d3", res:"foundry-prod", name:"gpt-5-mini", model:"gpt-5-mini", ver:"2025-08-07",
-       sku:"GlobalStandard", cap:"250K TPM", state:"ok", def:false, policy:"更新しない"},
-      {id:"d4", res:"aoai-dev", name:"o4-mini-dev", model:"o4-mini", ver:"2025-04-16",
-       sku:"Standard", cap:"120K TPM", state:"failed", def:false, policy:"更新しない",
+       sku:"GlobalStandard", cap:"250K TPM", azState:"ok", codexOk:true, pub:true,
+       codexState:"ok", def:false, policy:"更新しない"},
+      {id:"d4", res:"foundry-prod", name:"gpt-5-nano", model:"gpt-5-nano", ver:"2025-08-07",
+       sku:"GlobalStandard", cap:"100K TPM", azState:"ok", codexOk:true, pub:false,
+       codexState:null, def:false, policy:"更新しない"},
+      {id:"d5", res:"aoai-dev", name:"o4-mini-dev", model:"o4-mini", ver:"2025-04-16",
+       sku:"Standard", cap:"120K TPM", azState:"ok", codexOk:true, pub:true,
+       codexState:"failed", def:false, policy:"更新しない",
        err:"403 AuthorizationFailed — 呼び出し元にこのリソースへの Cognitive Services User 権限がありません。"},
-      {id:"d5", res:"aoai-dev", name:"gpt-5-nano-test", model:"gpt-5-nano", ver:"2025-08-07",
-       sku:"Standard", cap:"60K TPM", state:"ok", def:false, policy:"更新しない"}
+      {id:"d6", res:"aoai-dev", name:"gpt-5-nano-test", model:"gpt-5-nano", ver:"2025-08-07",
+       sku:"Standard", cap:"60K TPM", azState:"ok", codexOk:true, pub:false,
+       codexState:null, def:false, policy:"更新しない"},
+      {id:"d7", res:"aoai-dev", name:"text-embedding-3-large", model:"text-embedding-3-large",
+       ver:"1", sku:"Standard", cap:"120K TPM", azState:"ok", codexOk:false, pub:false,
+       codexState:null, def:false, policy:"更新しない"}
     ];
   }
   var deployments = makeDeployments();
   var newSeq = 0;
 
-  /* ---- ステージング（未反映の変更）---- */
-  function staged(){ return deployments.filter(function(d){ return !!d.stage; }); }
+  /* ---- Codex 層のステージング（「Codex へ反映」で一括適用）---- */
+  function byId(id){ return deployments.filter(function(x){ return x.id === id; })[0]; }
+  function effPub(d){ return d.stage ? d.stage === "pub" : d.pub; }
+  function staged(){ return deployments.filter(function(d){ return !!d.stage || !!d.stageDef; }); }
+  function stagePub(){ return deployments.filter(function(d){ return d.stage === "pub"; }); }
+  function stageUnpub(){ return deployments.filter(function(d){ return d.stage === "unpub"; }); }
+  function stageDefDep(){ return deployments.filter(function(d){ return !!d.stageDef; })[0] || null; }
   function stageCounts(){
-    var c = {add:0, edit:0, del:0};
-    staged().forEach(function(d){ c[d.stage]++; });
-    c.total = c.add + c.edit + c.del;
+    var c = {pub: stagePub().length, unpub: stageUnpub().length, def: stageDefDep() ? 1 : 0};
+    c.total = c.pub + c.unpub + c.def;
     return c;
   }
+  function publishedCount(){
+    return deployments.filter(function(d){ return d.pub; }).length;
+  }
+
   function resetStaged(){
     deployments = makeDeployments();
     newSeq = 0;
   }
   function seedStaged(){
     resetStaged();
-    /* 追加 2 / 変更 1 / 削除 1 */
-    stageAdd({res:"foundry-prod", name:"gpt-5-codex-2", model:"gpt-5-codex", ver:"2025-08-07",
-              sku:"GlobalStandard", cap:"300K TPM", policy:"マイナーバージョンを自動更新", how:"作成"});
-    stageAdd({res:"aoai-dev", name:"o4-mini-eval", model:"o4-mini", ver:"2025-04-16",
-              sku:"Standard", cap:"80K TPM", policy:"更新しない", how:"公開"});
-    var d2 = byId("d2");
-    d2.stage = "edit";
-    d2.stageChanges = [{label:"Capacity", from:"500K TPM", to:"1,000K TPM"}];
-    d2.cap = "1,000K TPM";
-    byId("d4").stage = "del";
+    /* 公開待ち 2 / 非公開待ち 1 / 既定モデル変更 1 */
+    toggleCodex("d4");   /* 未公開 → 公開待ち */
+    toggleCodex("d6");   /* 未公開 → 公開待ち */
+    toggleCodex("d3");   /* 公開中 → 非公開待ち */
+    stageDefault("d2");  /* 既定モデルを gpt-5-codex → gpt-5-high */
   }
-  function byId(id){ return deployments.filter(function(x){ return x.id === id; })[0]; }
-  function stageAdd(o){
-    newSeq++;
-    deployments.push({
-      id:"n"+newSeq, res:o.res, name:o.name, model:o.model, ver:o.ver, sku:o.sku, cap:o.cap,
-      state:"ok", def:false, policy:o.policy, stage:"add", how:o.how || "作成"
-    });
+
+  function toggleCodex(id){
+    var d = byId(id);
+    if (!d || !d.codexOk) return;
+    var next = !effPub(d);
+    d.stage = (next === d.pub) ? null : (next ? "pub" : "unpub");
+    if (!next && d.stageDef) unstageDefault();
+  }
+  function stageDefault(id){
+    var d = byId(id);
+    if (!d || d.def) return;
+    unstageDefault();
+    var prev = deployments.filter(function(x){ return x.def; })[0];
+    if (prev) prev.def = false;
+    d.def = true;
+    d.stageDef = true;
+    d.prevDefId = prev ? prev.id : null;
+  }
+  function unstageDefault(){
+    var d = stageDefDep();
+    if (!d) return;
+    d.def = false;
+    var prev = d.prevDefId ? byId(d.prevDefId) : null;
+    if (prev) prev.def = true;
+    d.stageDef = false;
+    d.prevDefId = null;
   }
   function unstage(id){
     var d = byId(id);
     if (!d) return;
-    if (d.stage === "add"){
-      deployments = deployments.filter(function(x){ return x.id !== id; });
-    } else {
-      if (d.stage === "edit" && d.stageChanges){
-        d.stageChanges.forEach(function(c){
-          if (c.label === "Capacity") d.cap = c.from;
-          if (c.label === "バージョン") d.ver = c.from;
-          if (c.label === "自動更新ポリシー") d.policy = c.from;
-          if (c.label === "既定のモデル"){
-            d.def = false;
-            var prev = c.prevDefId ? byId(c.prevDefId) : null;
-            if (prev) prev.def = true;
-          }
-        });
-      }
-      d.stage = null; d.stageChanges = null;
-    }
+    d.stage = null;
+    if (d.stageDef) unstageDefault();
   }
 
-  var stateMeta = {
-    ok:      {cls:"ok",   text:"Codex で利用可"},
-    pending: {cls:"warn", text:"反映待ち"},
-    failed:  {cls:"err",  text:"接続失敗"},
-    creating:{cls:"busy", text:"作成中"}
+  /* Codex 状態バッジ（公開中のみ表示） */
+  var codexMeta = {
+    ok:     {cls:"ok",  text:"Codex で利用可"},
+    failed: {cls:"err", text:"接続失敗"}
+  };
+  var stageMeta = {
+    pub:   {cls:"busy", text:"公開待ち"},
+    unpub: {cls:"warn", text:"非公開待ち"}
   };
 
   /* ============ 画面切替 ============ */
@@ -719,16 +772,20 @@
     show("homeEmpty", empty);
     document.getElementById("homeMain").hidden = empty;
     document.getElementById("btnAddModel").hidden = empty;
+    document.getElementById("filterPubLabel").hidden = empty;
     renderBanner();
-    var live = deployments.filter(function(d){ return d.stage !== "add"; }).length;
     document.getElementById("homeSub").textContent = empty
-      ? "公開しているモデルはありません"
-      : "2 つの Azure リソースから " + live + " 件を公開しています";
-    if (!empty) renderList(screen === "home-detail" ? "d1" : selectedDep);
+      ? "この Azure リソースに Model Deployment はありません"
+      : resources.length + " つの Azure リソース / Deployment " + deployments.length
+        + " 件 / Codex に公開 " + publishedCount() + " 件";
+    if (!empty) renderList(screen === "home-detail" || screen === "az-confirm" ? "d1" : selectedDep);
 
-    if (screen === "add-modal")   openAddModal();
+    if (screen === "add-modal")     openAddModal();
+    if (screen === "az-create")     openAddModal({phase:"progress"});
+    if (screen === "az-confirm")    openAzureConfirm("d1",
+      [{label:"Capacity", from:"500K TPM", to:"1,000K TPM"}]);
     if (screen === "sync-confirm")  openConfirm();
-    if (screen === "sync-progress") openProgress(2, null);
+    if (screen === "sync-progress") openProgress(1, null);
     if (screen === "sync-result")   openResult();
   }
 
@@ -738,16 +795,19 @@
     b.hidden = c.total === 0;
     if (c.total === 0) return;
     var parts = [];
-    if (c.add) parts.push("追加 " + c.add);
-    if (c.edit) parts.push("変更 " + c.edit);
-    if (c.del) parts.push("削除 " + c.del);
+    if (c.pub) parts.push("公開 " + c.pub);
+    if (c.unpub) parts.push("非公開 " + c.unpub);
+    if (c.def) parts.push("既定モデル変更");
     document.getElementById("diffBannerText").innerHTML =
-      "未反映の変更が <b>" + c.total + " 件</b>（" + parts.join(" / ") + "）";
+      "Codex への反映待ち: <b>" + parts.join(" / ") + "</b>";
   }
+
+  var filterPub = document.getElementById("filterPub");
+  filterPub.addEventListener("change", function(){ renderList(selectedDep); });
 
   sel.addEventListener("change", function(){
     if (sel.value === "home-diff" || sel.value.indexOf("sync-") === 0) seedStaged();
-    else if (sel.value === "home" || sel.value === "home-empty" || sel.value === "home-detail") resetStaged();
+    else resetStaged();
     selectedDep = null;
     render(sel.value);
   });
@@ -757,64 +817,94 @@
   });
 
   /* ============ ホーム一覧 ============ */
-  function badge(state){
-    var m = stateMeta[state];
+  function codexBadge(d){
+    if (!effPub(d) || !d.codexState) return "";
+    var m = codexMeta[d.codexState];
     return '<span class="badge '+m.cls+'"><span class="dot"></span>'+m.text+'</span>';
   }
-
-  var stageMeta = {
-    add:  {cls:"busy", text:"追加予定"},
-    edit: {cls:"warn", text:"変更あり"},
-    del:  {cls:"err",  text:"削除予定"}
-  };
+  function azBadge(d){
+    return d.azState === "creating"
+      ? '<span class="badge busy"><span class="dot"></span>作成中</span>' : "";
+  }
   function stageBadge(d){
-    var m = stageMeta[d.stage];
-    return '<span class="badge '+m.cls+'"><span class="dot"></span>'+m.text+'</span>';
-  }
-  function changeText(d){
-    if (d.stage === "add") return d.how === "公開" ? "既存のデプロイを Codex に公開します" : "Azure に新しく作成します";
-    if (d.stage === "del") return "Codex から外します（Azure の Deployment は残ります）";
-    if (d.stage === "edit" && d.stageChanges){
-      return d.stageChanges.map(function(c){ return c.label+" "+c.from+" → "+c.to; }).join(" / ");
+    var out = "";
+    if (d.stage){
+      var m = stageMeta[d.stage];
+      out += '<span class="badge small '+m.cls+'"><span class="dot"></span>'+m.text+'</span>';
     }
-    return "";
+    if (d.stageDef) out += '<span class="badge small warn"><span class="dot"></span>既定に変更</span>';
+    return out;
+  }
+  function switchHtml(d){
+    if (!d.codexOk){
+      return '<span class="switch off" title="Codex 対応モデルではありません">'
+           + '<input type="checkbox" disabled><span class="track"></span></span>';
+    }
+    return '<label class="switch" data-toggle="'+d.id+'" title="Codex で使う">'
+         + '<input type="checkbox"'+(effPub(d)?" checked":"")+'><span class="track"></span></label>';
   }
 
   function renderList(selectedId){
     selectedDep = selectedId || null;
+    var onlyPub = document.getElementById("filterPub").checked;
     var pane = document.getElementById("listPane");
     var html = "";
     resources.forEach(function(r){
-      var rows = deployments.filter(function(d){ return d.res === r.id; });
+      var rows = deployments.filter(function(d){
+        return d.res === r.id && (!onlyPub || effPub(d));
+      });
       if (!rows.length) return;
       html += '<div class="group"><div class="group-head">'
             + '<span class="res">'+r.label+'</span>'
             + '<span class="region">'+r.region+'</span>'
             + '<span class="tiny muted">'+rows.length+' 件</span></div>';
       rows.forEach(function(d){
+        var pub = effPub(d);
         var cls = "row" + (d.id===selectedId?" selected":"")
-                + (d.stage?" staged":"") + (d.stage==="del"?" staged-del":"");
+                + ((d.stage||d.stageDef)?" staged":"") + (pub?"":" unpub");
         html += '<div class="'+cls+'" data-dep="'+d.id+'">'
-              + '<span class="star'+(d.def?"":" off")+'" title="'+(d.def?"既定のモデル":"既定にする")+'">★</span>'
+              + '<span class="star'+(d.def?"":" off")+'" data-star="'+d.id+'" title="'
+              +   (d.def?"既定のモデル":"既定モデルに設定")+'">★</span>'
               + '<div class="name"><div class="n">'+d.name+'</div>'
               + '<div class="m">'+d.model+' · '+d.ver+'</div></div>'
               + '<div class="sku">'+d.sku+' · '+d.cap+'</div>'
-              + '<div class="state">'+(d.stage?stageBadge(d):badge(d.state))+'</div>'
+              + '<div class="state">'+azBadge(d)+codexBadge(d)+'</div>'
               + '<div class="acts">'
-              + (d.stage?'<button class="btn subtle tinybtn" data-undo="'+d.id+'">取り消す</button>':'')
-              + '<button class="btn icon more" title="その他の操作">…</button>'
+              +   stageBadge(d)
+              +   ((d.stage||d.stageDef)
+                    ? '<button class="btn subtle tinybtn" data-undo="'+d.id+'">取り消す</button>' : '')
+              +   switchHtml(d)
               + '</div>'
-              + (d.stage?'<div class="chg">'+changeText(d)+'</div>':'')
+              + (d.codexOk ? "" :
+                  '<div class="chg" style="color:var(--text-3)">Codex 対応モデルではありません</div>')
               + '</div>';
       });
       html += "</div>";
     });
+    if (!html) html = '<div class="tiny muted" style="padding:20px">条件に一致する Deployment はありません。</div>';
     pane.innerHTML = html;
 
     pane.querySelectorAll("[data-undo]").forEach(function(el){
       el.addEventListener("click", function(e){
         e.stopPropagation();
         unstage(el.getAttribute("data-undo"));
+        renderHome();
+      });
+    });
+    pane.querySelectorAll("[data-toggle]").forEach(function(el){
+      el.addEventListener("click", function(e){
+        e.stopPropagation();
+        e.preventDefault();
+        toggleCodex(el.getAttribute("data-toggle"));
+        renderHome();
+      });
+    });
+    pane.querySelectorAll("[data-star]").forEach(function(el){
+      el.addEventListener("click", function(e){
+        e.stopPropagation();
+        var d = byId(el.getAttribute("data-star"));
+        if (!d || !d.codexOk || !effPub(d)) return;
+        stageDefault(d.id);
         renderHome();
       });
     });
@@ -831,10 +921,11 @@
   }
 
   function renderDetail(id){
-    var d = deployments.filter(function(x){return x.id===id;})[0];
+    var d = byId(id);
     var r = resources.filter(function(x){return x.id===d.res;})[0];
     var det = document.getElementById("detailPane");
-    var errBlock = d.state === "failed"
+    var pub = effPub(d);
+    var errBlock = (pub && d.codexState === "failed")
       ? '<div class="notice err"><span>⚠</span><div>'+d.err+'</div></div>'
         + '<button class="btn" style="margin-top:10px;width:100%">管理者への権限依頼文をコピー</button>'
       : "";
@@ -843,70 +934,81 @@
       '<div class="detail-head">'
       + '<div class="t">'+d.name+'</div>'
       + '<div class="s">'+r.label+' · '+r.region+'</div>'
-      + '<div style="margin-top:9px">'+badge(d.state)+'</div>'
+      + '<div style="margin-top:9px">'+(azBadge(d)+codexBadge(d)
+          || '<span class="badge mute"><span class="dot"></span>Codex に未公開</span>')+'</div>'
       + '</div>'
       + '<div class="detail-body">'
       +   errBlock
-      +   '<div class="field" style="margin-top:'+(errBlock?"16px":"0")+'"><label>モデル</label>'
-      +     '<div class="val">'+d.model+'</div></div>'
-      +   '<div class="field"><label>バージョン</label>'
-      +     '<select id="detVer"><option>'+d.ver+'</option><option>2025-06-12</option>'
-      +     '<option>2025-08-07</option></select></div>'
-      +   '<div class="field"><label>自動更新ポリシー</label>'
-      +     '<select id="detPolicy"><option>'+d.policy+'</option><option>更新しない</option>'
-      +     '<option>マイナーバージョンを自動更新</option><option>常に最新へ更新</option></select></div>'
-      +   '<div class="field"><label>SKU</label><div class="val">'+d.sku+'</div></div>'
-      +   '<div class="field"><label>Capacity（'+d.cap.split(" ")[1]+'）</label>'
-      +     '<div class="capline"><input type="range" id="detCapRange" min="10" max="1000" step="10" value="'
-      +       parseInt(d.cap.replace(/[^0-9]/g,""),10) + '">'
-      +     '<div class="num"><input type="text" id="detCapNum" value="'+d.cap.split(" ")[0]+'"></div></div>'
-      +     '<div class="tiny muted" style="margin-top:6px">「変更を保存」すると未反映の変更になります。Azure へは「Codex へ反映」でまとめて適用します。</div>'
+      +   '<div class="detail-sec" style="margin-top:'+(errBlock?"16px":"0")+'">'
+      +     '<div class="h">Azure の設定</div>'
+      +     '<div class="field"><label>モデル</label><div class="val">'+d.model+'</div></div>'
+      +     '<div class="field"><label>SKU</label><div class="val">'+d.sku+'</div></div>'
+      +     '<div class="field"><label>Capacity（'+d.cap.split(" ")[1]+'）</label>'
+      +       '<div class="capline"><input type="range" id="detCapRange" min="10" max="1000" step="10" value="'
+      +         parseInt(d.cap.replace(/[^0-9]/g,""),10) + '">'
+      +       '<div class="num"><input type="text" id="detCapNum" value="'+d.cap.split(" ")[0]+'"></div></div>'
+      +     '</div>'
+      +     '<div class="field"><label>バージョン</label>'
+      +       '<select id="detVer"><option>'+d.ver+'</option><option>2025-06-12</option>'
+      +       '<option>2025-08-07</option></select></div>'
+      +     '<div class="field"><label>自動更新ポリシー</label>'
+      +       '<select id="detPolicy"><option>'+d.policy+'</option><option>更新しない</option>'
+      +       '<option>マイナーバージョンを自動更新</option><option>常に最新へ更新</option></select></div>'
+      +     '<button class="btn primary" id="detailAzApply" style="width:100%">Azure に適用</button>'
+      +     '<div class="tiny muted" style="margin-top:6px">確認のうえ、その場で Azure に適用します。'
+      +       '「Codex へ反映」とは関係ありません。</div>'
+      +   '</div>'
+      +   '<div class="detail-sec">'
+      +     '<div class="h">Codex</div>'
+      +     '<div class="field">'
+      +       (d.codexOk
+          ? '<label class="switch" id="detailToggle" style="font-size:13px;color:var(--text)">'
+            + '<input type="checkbox"'+(pub?" checked":"")+'><span class="track"></span>'
+            + '<span>Codex で使う</span></label>'
+            + (d.stage
+                ? '<div class="tiny" style="margin-top:7px;color:var(--warn)">'
+                  + stageMeta[d.stage].text+'（「Codex へ反映」で適用）</div>' : '')
+          : '<div class="tiny muted">この Deployment は Codex 対応モデルではないため公開できません。</div>')
+      +     '</div>'
       +   '</div>'
       + '</div>'
       + '<div class="detail-foot">'
-      +   '<button class="btn primary" id="detailApply">変更を保存</button>'
       +   '<div style="display:flex;gap:8px">'
-      +     '<button class="btn" id="detailDefault" style="flex:1"'+(d.def?" disabled":"")+'>既定に設定</button>'
+      +     '<button class="btn" id="detailDefault" style="flex:1"'
+      +       ((d.def || !pub || !d.codexOk)?" disabled":"")+'>既定モデルに設定</button>'
       +     '<button class="btn" style="flex:1">Azure Portal で開く</button>'
       +   '</div>'
-      +   (d.stage
-          ? '<button class="btn subtle" data-undo-detail="'+d.id+'">この行の変更を取り消す</button>'
-          : '<button class="btn danger-text" id="detailRemove">Codex から外す</button>')
+      +   ((d.stage || d.stageDef)
+          ? '<button class="btn subtle" data-undo-detail="'+d.id+'">この行の反映待ちを取り消す</button>'
+          : '')
       + '</div>';
 
     var rng = document.getElementById("detCapRange"), cnum = document.getElementById("detCapNum");
     if (rng) rng.addEventListener("input", function(){ cnum.value = fmtCap(rng.value); });
 
-    var ap = document.getElementById("detailApply");
+    var ap = document.getElementById("detailAzApply");
     if (ap) ap.addEventListener("click", function(){
       var changes = [];
       var newVer = document.getElementById("detVer").value;
       var newPolicy = document.getElementById("detPolicy").value;
       var newCap = fmtCap(cnum.value) + " " + d.cap.split(" ")[1];
+      if (newCap !== d.cap) changes.push({label:"Capacity", from:d.cap, to:newCap});
       if (newVer !== d.ver) changes.push({label:"バージョン", from:d.ver, to:newVer});
       if (newPolicy !== d.policy) changes.push({label:"自動更新ポリシー", from:d.policy, to:newPolicy});
-      if (newCap !== d.cap) changes.push({label:"Capacity", from:d.cap, to:newCap});
       if (!changes.length) return;
-      d.stageChanges = (d.stageChanges || []).concat(changes);
-      d.stage = "edit";
-      d.ver = newVer; d.policy = newPolicy; d.cap = newCap;
+      openAzureConfirm(d.id, changes);
+    });
+
+    var tg = document.getElementById("detailToggle");
+    if (tg) tg.addEventListener("click", function(e){
+      e.preventDefault();
+      toggleCodex(d.id);
       renderHome();
     });
 
     var df = document.getElementById("detailDefault");
     if (df) df.addEventListener("click", function(){
-      var prev = deployments.filter(function(x){ return x.def; })[0];
-      if (prev) prev.def = false;
-      d.def = true;
-      d.stageChanges = (d.stageChanges || []).concat(
-        [{label:"既定のモデル", from:"いいえ", to:"はい", prevDefId: prev ? prev.id : null}]);
-      if (!d.stage) d.stage = "edit";
-      renderHome();
-    });
-
-    var rm = document.getElementById("detailRemove");
-    if (rm) rm.addEventListener("click", function(){
-      d.stage = "del"; d.stageChanges = null;
+      stageDefault(d.id);
       renderHome();
     });
 
@@ -914,6 +1016,60 @@
     if (ud) ud.addEventListener("click", function(){
       unstage(ud.getAttribute("data-undo-detail"));
       renderHome();
+    });
+  }
+
+  /* ============ Azure 層：即時実行（確認 → 実行中 → 完了）============ */
+  function openAzureConfirm(id, changes){
+    var d = byId(id);
+    if (!d) return;
+    var r = resources.filter(function(x){ return x.id === d.res; })[0];
+    var rows = changes.map(function(c){
+      return '<dt>'+c.label+'</dt><dd>'+c.from+' → <b>'+c.to+'</b></dd>';
+    }).join("");
+
+    var m = mount(
+      '<div class="modal" style="width:540px">'
+      + '<div class="modal-head"><h2>Azure に適用しますか？</h2>'
+      +   '<div class="s">'+d.name+'（'+r.label+' · '+r.region+'）</div></div>'
+      + '<div class="modal-body" id="azBody">'
+      +   '<div class="summary-box"><dl>'+rows+'</dl></div>'
+      +   '<div class="notice warn"><span>⚠</span><div>この操作は<b>その場で Azure に適用</b>されます。'
+      +     'Capacity の変更は課金額に影響します。Codex への公開状態は変わりません。</div></div>'
+      + '</div>'
+      + '<div class="modal-foot" id="azFoot"><span class="spacer"></span>'
+      +   '<button class="btn" data-close>キャンセル</button>'
+      +   '<button class="btn primary" id="azRun">Azure に適用</button>'
+      + '</div></div>'
+    );
+    m.querySelector("[data-close]").addEventListener("click", closeModal);
+    m.querySelector("#azRun").addEventListener("click", function(){
+      document.getElementById("azBody").innerHTML =
+        '<div style="display:flex;align-items:center;gap:12px;padding:14px 0">'
+        + '<span class="spinner dark"></span>'
+        + '<span>Azure に変更を適用しています…</span></div>';
+      document.getElementById("azFoot").innerHTML =
+        '<span class="spacer"></span><button class="btn" disabled>閉じる</button>';
+      setTimeout(function(){
+        changes.forEach(function(c){
+          if (c.label === "Capacity") d.cap = c.to;
+          if (c.label === "バージョン") d.ver = c.to;
+          if (c.label === "自動更新ポリシー") d.policy = c.to;
+        });
+        var body = document.getElementById("azBody");
+        if (!body) return;
+        body.innerHTML =
+          '<div class="result-row"><span class="badge ok"><span class="dot"></span>完了</span>'
+          + '<div class="txt"><div class="t">'+d.name+'</div>'
+          + '<div class="d">'+changes.map(function(c){ return c.label+' を '+c.to+' に変更しました'; }).join("<br>")
+          + '</div></div></div>';
+        document.getElementById("azFoot").innerHTML =
+          '<span class="spacer"></span><button class="btn primary" id="azDone">閉じる</button>';
+        document.getElementById("azDone").addEventListener("click", function(){
+          overlay.innerHTML = "";
+          renderHome();
+        });
+      }, 1400);
     });
   }
 
@@ -1044,7 +1200,7 @@
   }
   function closeModal(){
     overlay.innerHTML = "";
-    if (["add-modal","sync-confirm","sync-progress","sync-result"].indexOf(current) >= 0){
+    if (["add-modal","az-create","az-confirm","sync-confirm","sync-progress","sync-result"].indexOf(current) >= 0){
       renderHome();
     }
   }
@@ -1058,24 +1214,19 @@
     {id:"o4-mini",     rec:false, meta:"推論 · 2025-04-16"}
   ];
 
-  var unpublished = [
-    {name:"gpt-5-codex-2", resId:"foundry-prod", res:"rg-ai / foundry-prod", model:"gpt-5-codex", ver:"2025-08-07",
-     sku:"GlobalStandard", cap:"300K TPM"},
-    {name:"gpt-41-legacy", resId:"foundry-prod", res:"rg-ai / foundry-prod", model:"gpt-4.1",     ver:"2025-04-14",
-     sku:"Standard", cap:"200K TPM"},
-    {name:"o4-mini-eval",  resId:"aoai-dev",     res:"rg-dev / aoai-dev",    model:"o4-mini",     ver:"2025-04-16",
-     sku:"Standard", cap:"80K TPM"}
-  ];
-
   function resOptions(){
     return connectedResources().map(function(r){
       return '<option value="'+r.id+'">'+r.rg+' / '+r.name+'（'+r.region+'）</option>';
     }).join("") + '<option value="__connect">他のリソースを接続…</option>';
   }
 
-  function openAddModal(tab){
-    tab = tab || "new";
-    var isNew = tab === "new";
+  function openAddModal(opt){
+    opt = opt || {};
+
+    if (opt.phase === "progress"){
+      openAddProgress(null);
+      return;
+    }
 
     var opts = models.map(function(m,i){
       return '<div class="opt'+(i===0?" sel":"")+'" data-model="'+m.id+'">'
@@ -1120,43 +1271,25 @@
       +   '<div class="field" style="grid-column:1/-1"><label>自動更新ポリシー</label>'
       +     '<select><option>マイナーバージョンを自動更新（推奨）</option>'
       +     '<option>更新しない</option><option>常に最新へ更新</option></select></div>'
-      + '</div></details>';
-
-    var existingBody =
-      '<p class="tiny muted" style="margin:0 0 12px">Azure にあるが Codex に公開していないデプロイです。公開するものを選んでください。</p>'
-      + '<table class="pubtable"><thead><tr>'
-      + '<th style="width:32px"></th><th>デプロイ名</th><th>モデル</th><th>SKU / Capacity</th></tr></thead><tbody>'
-      + unpublished.map(function(u,i){
-          return '<tr><td><input type="checkbox" data-unpub="'+i+'"'+(i===0?" checked":"")+'></td>'
-               + '<td><b>'+u.name+'</b><div class="tiny muted">'+u.res+'</div></td>'
-               + '<td>'+u.model+' · '+u.ver+'</td><td class="tiny muted">'+u.sku+' · '+u.cap+'</td></tr>';
-        }).join("")
-      + '</tbody></table>';
+      + '</div></details>'
+      + '<label class="chk" id="addUseCodex"><input type="checkbox" checked>'
+      +   '<span>作成後に <b>Codex で使う</b>（次回の「Codex へ反映」に含めます）</span></label>';
 
     var m = mount(
       '<div class="modal wide">'
       + '<div class="modal-head">'
       +   '<h2>モデルを追加</h2>'
-      +   '<div class="s">Azure の Model Deployment を Codex から使えるようにします。</div>'
-      +   '<div class="tabs">'
-      +     '<button class="tab'+(isNew?" active":"")+'" data-tab="new">新しく作成</button>'
-      +     '<button class="tab'+(isNew?"":" active")+'" data-tab="exist">既存のデプロイを公開</button>'
-      +   '</div>'
+      +   '<div class="s">Azure に Model Deployment を作成します。作成は Azure にその場で実行されます。</div>'
       + '</div>'
-      + '<div class="modal-body">'+(isNew?newTabBody:existingBody)+'</div>'
+      + '<div class="modal-body">'+newTabBody+'</div>'
       + '<div class="modal-foot">'
-      +   '<span class="tiny muted">'+(isNew
-            ? "この時点では Azure に作成されません。「Codex へ反映」でまとめて実行します。"
-            : "この時点では公開されません。「Codex へ反映」でまとめて実行します。")+'</span>'
+      +   '<span class="tiny muted">Deployment の作成は Azure の課金対象です。</span>'
       +   '<span class="spacer"></span>'
       +   '<button class="btn" data-close>キャンセル</button>'
-      +   '<button class="btn primary" id="addNext">'+(isNew?"追加":"公開対象に追加")+'</button>'
+      +   '<button class="btn primary" id="addNext">Azure に作成</button>'
       + '</div></div>'
     );
 
-    m.querySelectorAll(".tab").forEach(function(t){
-      t.addEventListener("click", function(){ openAddModal(t.getAttribute("data-tab")); });
-    });
     m.querySelectorAll(".opt").forEach(function(o){
       o.addEventListener("click", function(){
         m.querySelectorAll(".opt").forEach(function(x){x.classList.remove("sel");});
@@ -1194,89 +1327,140 @@
 
     m.querySelector("[data-close]").addEventListener("click", closeModal);
     m.querySelector("#addNext").addEventListener("click", function(){
-      if (isNew){
-        var resId = resSel ? resSel.value : "foundry-prod";
-        if (resId === "__connect") return;
-        var adv = m.querySelectorAll("details.adv select");
-        stageAdd({
-          res: resId,
-          name: (m.querySelector("#depName").value || "new-deployment"),
-          model: (m.querySelector(".opt.sel") || {getAttribute:function(){return "gpt-5-codex";}}).getAttribute("data-model"),
-          ver: adv[0] ? adv[0].value.replace("（最新）","") : "2025-08-07",
-          sku: adv[1] ? adv[1].value : "GlobalStandard",
-          cap: fmtCap(m.querySelector("#capNum").value) + " TPM",
-          policy: adv[2] ? adv[2].value.replace("（推奨）","") : "マイナーバージョンを自動更新",
-          how: "作成"
-        });
-      } else {
-        m.querySelectorAll("[data-unpub]").forEach(function(cb){
-          if (!cb.checked) return;
-          var u = unpublished[parseInt(cb.getAttribute("data-unpub"),10)];
-          stageAdd({res:u.resId, name:u.name, model:u.model, ver:u.ver, sku:u.sku, cap:u.cap,
-                    policy:"更新しない", how:"公開"});
-        });
-      }
-      overlay.innerHTML = "";
-      renderHome();
+      var resId = resSel ? resSel.value : "foundry-prod";
+      if (resId === "__connect") return;
+      var adv = m.querySelectorAll("details.adv select");
+      var useCodex = m.querySelector("#addUseCodex input").checked;
+      openAddProgress({
+        res: resId,
+        name: (m.querySelector("#depName").value || "new-deployment"),
+        model: (m.querySelector(".opt.sel") || {getAttribute:function(){return "gpt-5-codex";}}).getAttribute("data-model"),
+        ver: adv[0] ? adv[0].value.replace("（最新）","") : "2025-08-07",
+        sku: adv[1] ? adv[1].value : "GlobalStandard",
+        cap: fmtCap(m.querySelector("#capNum").value) + " TPM",
+        policy: adv[2] ? adv[2].value.replace("（推奨）","") : "マイナーバージョンを自動更新",
+        useCodex: useCodex
+      });
     });
   }
 
-  /* ============ 確認ステップ ============ */
-  function confirmActionText(d){
-    if (d.stage === "add"){
-      return d.how === "公開"
-        ? "既存の Deployment を Codex に公開（" + d.sku + " · " + d.cap + "）"
-        : "Azure に Deployment を作成（" + d.model + " · " + d.ver + " · " + d.sku + " · " + d.cap + "）";
-    }
-    if (d.stage === "del") return "Codex から外す（Azure の Deployment は削除しません）";
-    return (d.stageChanges || []).map(function(c){ return c.label+" を "+c.from+" → "+c.to+" に変更"; }).join("<br>");
+  /* Azure への作成（即時実行）：モーダル内で進行 → 完了 */
+  function addDeployment(o){
+    newSeq++;
+    var d = {
+      id:"n"+newSeq, res:o.res, name:o.name, model:o.model, ver:o.ver, sku:o.sku, cap:o.cap,
+      azState:"ok", codexOk:true, pub:false, codexState:null, def:false, policy:o.policy,
+      stage: o.useCodex ? "pub" : null
+    };
+    deployments.push(d);
+    return d;
   }
 
+  function openAddProgress(spec){
+    var demo = spec || {res:"foundry-prod", name:"gpt-5-codex-2", model:"gpt-5-codex",
+                        ver:"2025-08-07", sku:"GlobalStandard", cap:"300K TPM",
+                        policy:"マイナーバージョンを自動更新", useCodex:true};
+    var r = resources.filter(function(x){ return x.id === demo.res; })[0] || resources[0];
+
+    mount(
+      '<div class="modal wide">'
+      + '<div class="modal-head"><h2>Azure に作成しています</h2>'
+      +   '<div class="s">'+demo.name+'（'+r.label+' · '+r.region+'）</div></div>'
+      + '<div class="modal-body" id="addProgBody">'
+      +   '<div style="display:flex;align-items:center;gap:12px;padding:14px 0">'
+      +     '<span class="spinner dark"></span>'
+      +     '<span>Azure に Deployment を作成しています…</span></div>'
+      +   '<div class="summary-box"><dl>'
+      +     '<dt>モデル</dt><dd>'+demo.model+' · '+demo.ver+'</dd>'
+      +     '<dt>SKU / Capacity</dt><dd>'+demo.sku+' · '+demo.cap+'</dd>'
+      +     '<dt>自動更新</dt><dd>'+demo.policy+'</dd>'
+      +   '</dl></div>'
+      + '</div>'
+      + '<div class="modal-foot" id="addProgFoot"><span class="spacer"></span>'
+      +   '<button class="btn" disabled>閉じる</button></div>'
+      + '</div>'
+    );
+
+    setTimeout(function(){
+      var d = addDeployment(demo);
+      var body = document.getElementById("addProgBody");
+      if (!body) return;
+      body.innerHTML =
+        '<div class="result-row"><span class="badge ok"><span class="dot"></span>作成しました</span>'
+        + '<div class="txt"><div class="t">'+d.name+'</div>'
+        + '<div class="d">'+r.label+' · '+d.model+' · '+d.ver+' · '+d.sku+' · '+d.cap+'</div></div></div>'
+        + (demo.useCodex
+            ? '<div class="notice info"><span>ℹ</span><div>この Deployment は <b>公開待ち</b>です。'
+              + 'ホームの「Codex へ反映」で Codex から見えるようになります。</div></div>'
+            : '<div class="notice info"><span>ℹ</span><div>Codex には公開していません。'
+              + '一覧の「Codex で使う」トグルでいつでも公開できます。</div></div>');
+      document.getElementById("addProgFoot").innerHTML =
+        '<span class="spacer"></span><button class="btn primary" id="addProgDone">閉じる</button>';
+      document.getElementById("addProgDone").addEventListener("click", function(){
+        overlay.innerHTML = "";
+        selectedDep = null;
+        renderHome();
+      });
+    }, 1500);
+  }
+
+  /* ============ 確認ステップ（Codex 層のみ）============ */
   function openConfirm(){
     var c = stageCounts();
     var rows = "";
     resources.forEach(function(r){
-      var list = staged().filter(function(d){ return d.res === r.id; });
+      var list = deployments.filter(function(d){ return d.res === r.id && (d.stage || d.stageDef); });
       if (!list.length) return;
       rows += '<div style="margin-top:14px"><div class="tiny muted" style="margin-bottom:6px">'
             + r.label + '（' + r.region + '） · Provider「azure-' + r.id + '」を更新</div><dl>';
       list.forEach(function(d){
-        rows += '<dt>' + stageMeta[d.stage].text.replace("予定","").replace("あり","")
-              + '</dt><dd><b>'+d.name+'</b><br>'+confirmActionText(d)+'</dd>';
+        if (d.stage === "pub"){
+          rows += '<dt>公開する</dt><dd><b>'+d.name+'</b><br>'
+                + d.model+' · '+d.ver+' を Codex から選べるようにします</dd>';
+        } else if (d.stage === "unpub"){
+          rows += '<dt>非公開にする</dt><dd><b>'+d.name+'</b><br>'
+                + 'Codex から見えなくします（Azure の Deployment は残ります）</dd>';
+        }
+        if (d.stageDef){
+          rows += '<dt>既定にする</dt><dd><b>'+d.name+'</b><br>'
+                + 'Codex の既定モデルをこの Deployment にします</dd>';
+        }
       });
       rows += '</dl></div>';
     });
-    if (!rows) rows = '<div class="tiny muted">未反映の変更はありません。</div>';
-    rows = '<div class="tiny muted">未反映の変更 '+c.total+' 件（追加 '+c.add+' / 変更 '+c.edit+' / 削除 '+c.del+'）</div>'
-         + rows;
+    if (!rows) rows = '<div class="tiny muted">反映待ちの変更はありません。</div>';
+    var head = [];
+    if (c.pub) head.push("公開 " + c.pub);
+    if (c.unpub) head.push("非公開 " + c.unpub);
+    if (c.def) head.push("既定モデル変更");
+    rows = '<div class="tiny muted">Codex への反映待ち: ' + (head.join(" / ") || "なし") + '</div>' + rows;
 
-    var isCreate = c.add > 0;
     var m = mount(
       '<div class="modal">'
-      + '<div class="modal-head"><h2>実行する内容の確認</h2>'
-      +   '<div class="s">未反映の変更をまとめて Azure と opencodex に適用します。</div></div>'
+      + '<div class="modal-head"><h2>Codex へ反映しますか？</h2>'
+      +   '<div class="s">Codex から見えるモデルの構成を opencodex に適用します。'
+      +     'Azure の Deployment は作成も削除もしません。</div></div>'
       + '<div class="modal-body">'
       +   '<div class="summary-box">'+rows+'</div>'
-      +   '<div class="notice warn"><span>⚠</span><div>反映後の接続テストは Azure に実際のリクエストを送ります。ごく少額ですが<b>課金が発生します</b>。'
-      +     (isCreate?' また、Azure に作成する Deployment 自体も課金対象です。':'')+'</div></div>'
+      +   '<div class="notice warn"><span>⚠</span><div>公開する Deployment には接続テストとして'
+      +     'Azure へ実際のリクエストを 1 回送ります。ごく少額ですが<b>課金が発生します</b>。</div></div>'
       +   '<label class="chk"><input type="checkbox" checked>'
-      +     '<span>反映後に <b>Codex を再起動</b>する（Codex はモデル一覧を起動時に読み込むため、再起動しないと新しいモデルが表示されないことがあります）</span></label>'
+      +     '<span>反映後に <b>Codex を再起動</b>する（Codex はモデル一覧を起動時に読み込むため、再起動しないと変更が反映されないことがあります）</span></label>'
       + '</div>'
       + '<div class="modal-foot"><span class="spacer"></span>'
       +   '<button class="btn" data-back>戻る</button>'
-      +   '<button class="btn primary" id="goRun">反映する</button>'
+      +   '<button class="btn primary" id="goRun">Codex へ反映</button>'
       + '</div></div>'
     );
     m.querySelector("[data-back]").addEventListener("click", closeModal);
     m.querySelector("#goRun").addEventListener("click", function(){ runProgress(); });
   }
 
-  /* ============ 進行状況 ============ */
+  /* ============ 進行状況（3 段階）============ */
   var stepDefs = [
-    {t:"Azure の Model Deployment を作成・更新", d:"作成 0 件 / 更新 0 件"},
-    {t:"opencodex の Provider を更新",     d:"azure-foundry-prod にエンドポイントと API キーを登録"},
-    {t:"Codex のカタログを同期",           d:"モデル一覧を書き出して Codex に読み込ませる"},
-    {t:"接続テスト",                       d:"各デプロイに小さなリクエストを 1 回送信"}
+    {t:"opencodex の Provider を更新", d:"エンドポイントと API キーを登録"},
+    {t:"Codex のカタログを同期",       d:"モデル一覧を書き出して Codex に読み込ませる"},
+    {t:"接続テスト",                   d:"公開した各 Deployment に小さなリクエストを 1 回送信"}
   ];
 
   function progressHtml(activeIndex, failIndex){
@@ -1296,14 +1480,15 @@
 
   function openProgress(activeIndex, failIndex){
     var c = stageCounts();
-    stepDefs[0].d = "作成 " + c.add + " 件 / 更新 " + c.edit + " 件";
-    stepDefs[2].d = "モデル一覧を書き出して Codex に読み込ませる（削除 " + c.del + " 件を含む）";
+    stepDefs[0].d = "エンドポイントと API キーを登録（公開 " + c.pub + " / 非公開 " + c.unpub + "）";
+    stepDefs[2].d = "公開した " + c.pub + " 件に小さなリクエストを 1 回送信";
     mount(
       '<div class="modal">'
-      + '<div class="modal-head"><h2>反映しています</h2>'
+      + '<div class="modal-head"><h2>Codex へ反映しています</h2>'
       +   '<div class="s">完了するまで数十秒かかります。ウィンドウは閉じずにお待ちください。</div></div>'
       + '<div class="modal-body" id="progBody">'+progressHtml(activeIndex, failIndex)+'</div>'
-      + '<div class="modal-foot"><span class="tiny muted">手順 '+Math.min(activeIndex+1,4)+' / 4</span>'
+      + '<div class="modal-foot"><span class="tiny muted">手順 '
+      +   Math.min(activeIndex+1, stepDefs.length)+' / '+stepDefs.length+'</span>'
       +   '<span class="spacer"></span><button class="btn" disabled>閉じる</button></div>'
       + '</div>'
     );
@@ -1319,48 +1504,88 @@
       if (!body){ clearInterval(timer); return; }
       body.innerHTML = progressHtml(i, null);
       var foot = overlay.querySelector(".modal-foot .tiny");
-      if (foot) foot.textContent = "手順 " + (i+1) + " / 4";
+      if (foot) foot.textContent = "手順 " + (i+1) + " / " + stepDefs.length;
     }, 900);
   }
 
-  /* ============ 結果 ============ */
+  /* ============ 結果：公開した Deployment ごとの接続テスト ============ */
+  function commitStaged(){
+    deployments.forEach(function(d){
+      if (d.stage === "pub"){
+        d.pub = true;
+        /* aoai-dev は権限不足で接続テストに失敗する想定 */
+        d.codexState = (d.res === "aoai-dev") ? "failed" : "ok";
+        if (d.codexState === "failed" && !d.err){
+          d.err = "403 AuthorizationFailed — 呼び出し元にこのリソースへの Cognitive Services User 権限がありません。";
+        }
+      } else if (d.stage === "unpub"){
+        d.pub = false; d.codexState = null;
+        if (d.def) d.def = false;
+      }
+      d.stage = null; d.stageDef = false; d.prevDefId = null;
+    });
+  }
+
   function openResult(){
+    var pubs = stagePub();
+    var unpubs = stageUnpub();
+    var defDep = stageDefDep();
+    /* 既存の公開済みで接続失敗しているものも結果に含める */
+    var tested = pubs.map(function(d){
+      var fail = (d.res === "aoai-dev");
+      return {d:d, fail:fail};
+    });
+    var failCount = tested.filter(function(t){ return t.fail; }).length;
+    var okCount = tested.length - failCount;
+
+    var rows = tested.map(function(t){
+      var r = resources.filter(function(x){ return x.id === t.d.res; })[0];
+      if (!t.fail){
+        return '<div class="result-row">'
+          + '<span class="badge ok"><span class="dot"></span>成功</span>'
+          + '<div class="txt"><div class="t">'+t.d.name+'</div>'
+          + '<div class="d">'+r.label+' · 接続テスト 応答 '+(500+Math.floor(Math.random()*500))+' ms</div>'
+          + '</div></div>';
+      }
+      return '<div class="result-row" style="border-color:#f3cfcb">'
+        + '<span class="badge err"><span class="dot"></span>失敗</span>'
+        + '<div class="txt"><div class="t">'+t.d.name+'</div>'
+        + '<div class="d">'+r.label+' · <b>403 AuthorizationFailed</b><br>'
+        + 'このリソースに対する「Cognitive Services User」権限がありません。リソース所有者に権限の付与を依頼してください。</div>'
+        + '<div style="margin-top:10px;display:flex;gap:8px">'
+        +   '<button class="btn">管理者への権限依頼文をコピー</button>'
+        +   '<button class="btn subtle">Azure Portal で開く</button>'
+        + '</div></div></div>';
+    }).join("");
+    if (!rows) rows = '<div class="tiny muted">接続テストの対象はありませんでした。</div>';
+
+    var extra = [];
+    if (unpubs.length) extra.push('非公開にした ' + unpubs.length + ' 件を Codex のモデル一覧から外しました。');
+    if (defDep) extra.push('既定モデルを <b>' + defDep.name + '</b> にしました。');
+    extra.push('Codex を再起動しました。');
+
     var m = mount(
       '<div class="modal">'
-      + '<div class="modal-head"><h2>反映が完了しました（1 件失敗）</h2>'
-      +   '<div class="s">3 件のうち 2 件が Codex で使えるようになりました。</div></div>'
+      + '<div class="modal-head"><h2>Codex へ反映しました'
+      +   (failCount ? '（'+failCount+' 件失敗）' : '')+'</h2>'
+      +   '<div class="s">公開した '+tested.length+' 件のうち '+okCount+' 件が Codex で使えるようになりました。</div></div>'
       + '<div class="modal-body">'
-      +   '<div class="result-row">'
-      +     '<span class="badge ok"><span class="dot"></span>成功</span>'
-      +     '<div class="txt"><div class="t">gpt-5-codex</div>'
-      +       '<div class="d">rg-ai / foundry-prod · 接続テスト 応答 842 ms</div></div></div>'
-      +   '<div class="result-row">'
-      +     '<span class="badge ok"><span class="dot"></span>成功</span>'
-      +     '<div class="txt"><div class="t">gpt-5-mini</div>'
-      +       '<div class="d">rg-ai / foundry-prod · 接続テスト 応答 610 ms</div></div></div>'
-      +   '<div class="result-row" style="border-color:#f3cfcb">'
-      +     '<span class="badge err"><span class="dot"></span>失敗</span>'
-      +     '<div class="txt"><div class="t">o4-mini-dev</div>'
-      +       '<div class="d">rg-dev / aoai-dev · <b>403 AuthorizationFailed</b><br>'
-      +       'このリソースに対する「Cognitive Services User」権限がありません。リソース所有者に権限の付与を依頼してください。</div>'
-      +       '<div style="margin-top:10px;display:flex;gap:8px">'
-      +         '<button class="btn">管理者への権限依頼文をコピー</button>'
-      +         '<button class="btn subtle">Azure Portal で開く</button>'
-      +       '</div></div></div>'
-      +   '<div class="notice info"><span>ℹ</span><div>Codex を再起動しました。Codex のモデル選択に新しい 2 件が表示されます。</div></div>'
+      +   rows
+      +   '<div class="notice info"><span>ℹ</span><div>'+extra.join("<br>")+'</div></div>'
       + '</div>'
       + '<div class="modal-foot"><span class="spacer"></span>'
-      +   '<button class="btn" id="retryFailed">失敗した 1 件を再試行</button>'
+      +   (failCount ? '<button class="btn" id="retryFailed">失敗した '+failCount+' 件を再試行</button>' : '')
       +   '<button class="btn primary" id="resultDone">完了</button>'
       + '</div></div>'
     );
     m.querySelector("#resultDone").addEventListener("click", function(){
       overlay.innerHTML = "";
-      resetStaged();
+      commitStaged();
       selectedDep = null;
       render("home");
     });
-    m.querySelector("#retryFailed").addEventListener("click", function(){ runProgress(); });
+    var rt = m.querySelector("#retryFailed");
+    if (rt) rt.addEventListener("click", function(){ runProgress(); });
   }
 
   /* ============ 設定：Azure セクション ============ */
@@ -1403,8 +1628,8 @@
   }
 
   /* ============ ホームのボタン配線 ============ */
-  document.getElementById("btnAddModel").addEventListener("click", function(){ openAddModal("new"); });
-  document.getElementById("btnAddModelEmpty").addEventListener("click", function(){ openAddModal("new"); });
+  document.getElementById("btnAddModel").addEventListener("click", function(){ openAddModal(); });
+  document.getElementById("btnAddModelEmpty").addEventListener("click", function(){ openAddModal(); });
   document.getElementById("btnSyncFromBanner").addEventListener("click", function(){ openConfirm(); });
   document.getElementById("btnDiscardDiff").addEventListener("click", function(){
     resetStaged(); selectedDep = null; render("home");
