@@ -152,7 +152,14 @@
   .row .name .m{font-size:12px;color:var(--text-2);margin-top:1px}
   .row .sku{flex:0 0 210px;font-size:12px;color:var(--text-2)}
   .row .state{flex:0 0 150px}
-  .row .more{margin-left:auto}
+  .row .acts{margin-left:auto;display:flex;align-items:center;gap:2px}
+  .row.staged{background:#fcfbf7}
+  .row.staged:hover{background:#f7f5ef}
+  .row.staged-del .name .n,.row.staged-del .sku{text-decoration:line-through}
+  .row.staged-del{opacity:.62}
+  .row.staged{flex-wrap:wrap}
+  .row .chg{flex:0 0 100%;font-size:12px;color:var(--warn);margin:3px 0 0 28px}
+  .btn.tinybtn{font-size:12px;padding:4px 8px}
 
   /* ---------- 詳細パネル ---------- */
   .detail{
@@ -206,6 +213,17 @@
   .check .txt .t{font-weight:600;font-size:13.5px}
   .check .txt .d{font-size:12.5px;color:var(--text-2);margin-top:3px;line-height:1.5}
   .check .act{flex:0 0 auto;margin-top:2px}
+  .check.disabled{opacity:.5}
+  .reslist{border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;margin-top:9px;background:var(--surface)}
+  .resitem{display:flex;align-items:flex-start;gap:10px;padding:9px 11px;font-size:13px;border-top:1px solid var(--line)}
+  .resitem:first-child{border-top:0}
+  .resitem.off{opacity:.62}
+  .resitem input[type=checkbox]{width:15px;height:15px;margin-top:2px}
+  .resitem .rn{display:block;font-weight:600;font-size:13px}
+  .resitem .rm{display:block;font-size:12px;color:var(--text-2);margin-top:2px}
+  .subline{display:flex;align-items:center;gap:10px;margin-top:10px}
+  .subline > span.k{font-size:12px;color:var(--text-2);flex:0 0 118px}
+  .subline > select{flex:1}
   .setup-foot{
     flex:0 0 auto;margin-top:auto;padding:16px 0 22px;display:flex;align-items:center;gap:14px;
     position:sticky;bottom:0;background:linear-gradient(to top,var(--surface) 70%,transparent);
@@ -383,6 +401,16 @@
         <div class="act"></div>
       </div>
 
+      <div class="check" id="chk-res">
+        <div class="mark wait">…</div>
+        <div class="txt">
+          <div class="t">利用する Azure リソースを選ぶ</div>
+          <div class="d">Codex から使う Foundry / Azure OpenAI リソースを選びます。あとから設定で変更できます。</div>
+          <div id="resPickBody"></div>
+        </div>
+        <div class="act"></div>
+      </div>
+
       <div class="check" id="chk-node">
         <div class="mark wait">…</div>
         <div class="txt">
@@ -431,9 +459,9 @@
 
       <div class="banner" id="diffBanner" hidden>
         <span class="ico">●</span>
-        <span>未反映の変更が <b>2 件</b> あります（gpt-5-mini の追加、gpt-5 の Capacity 変更）</span>
+        <span id="diffBannerText">未反映の変更があります</span>
         <span class="spacer"></span>
-        <button class="btn" id="btnDiscardDiff">変更を破棄</button>
+        <button class="btn subtle" id="btnDiscardDiff">すべて取り消す</button>
         <button class="btn primary" id="btnSyncFromBanner">Codex へ反映</button>
       </div>
 
@@ -465,9 +493,8 @@
           <span class="badge ok"><span class="dot"></span>正常</span>
           <div class="txt">
             <div class="t">Azure サインイン</div>
-            <div class="d">atsushi_a_nakamura@jp.ricoh.com ／ テナント: Contoso Corp ／ サブスクリプション: Prod-AI (0f3a…9c21)</div>
+            <div class="d">サインイン済みです。アカウントとリソースは下の「Azure」で設定します。</div>
           </div>
-          <button class="btn">アカウントを切り替え</button>
         </div>
         <div class="srow">
           <span class="badge ok"><span class="dot"></span>正常</span>
@@ -492,6 +519,31 @@
           </div>
           <button class="btn">サービスを修復</button>
         </div>
+
+        <h2>Azure</h2>
+        <div class="srow">
+          <div class="txt">
+            <div class="t">アカウント</div>
+            <div class="d">atsushi_a_nakamura@jp.ricoh.com</div>
+          </div>
+          <button class="btn">アカウントを切り替え</button>
+        </div>
+        <div class="srow">
+          <div class="txt">
+            <div class="t">テナント</div>
+            <div class="d">Contoso Corp（アクセスできるテナントは 1 つです）</div>
+          </div>
+        </div>
+        <div class="srow">
+          <div class="txt">
+            <div class="t">サブスクリプション</div>
+            <div class="d" id="setSubText">Prod-AI（0f3a…9c21）</div>
+          </div>
+          <button class="btn" id="btnChangeSub">変更</button>
+        </div>
+        <div class="tiny muted" style="margin:14px 0 6px">接続中の Azure Model Resource</div>
+        <div id="settingsResList"></div>
+        <button class="btn" id="btnAddResource" style="margin-top:4px">リソースを追加</button>
 
         <h2>接続</h2>
         <div class="srow">
@@ -544,19 +596,93 @@
     {id:"aoai-dev",     label:"rg-dev / aoai-dev",    region:"eastus2"}
   ];
 
-  var deployments = [
-    {id:"d1", res:"foundry-prod", name:"gpt-5-codex", model:"gpt-5-codex", ver:"2025-08-07",
-     sku:"GlobalStandard", cap:"500K TPM", state:"ok", def:true, policy:"マイナーバージョンを自動更新"},
-    {id:"d2", res:"foundry-prod", name:"gpt-5-high", model:"gpt-5", ver:"2025-08-07",
-     sku:"GlobalStandard", cap:"1,000K TPM", state:"ok", def:false, policy:"マイナーバージョンを自動更新"},
-    {id:"d3", res:"foundry-prod", name:"gpt-5-mini", model:"gpt-5-mini", ver:"2025-08-07",
-     sku:"GlobalStandard", cap:"250K TPM", state:"pending", def:false, policy:"更新しない"},
-    {id:"d4", res:"aoai-dev", name:"o4-mini-dev", model:"o4-mini", ver:"2025-04-16",
-     sku:"Standard", cap:"120K TPM", state:"failed", def:false, policy:"更新しない",
-     err:"403 AuthorizationFailed — 呼び出し元にこのリソースへの Cognitive Services User 権限がありません。"},
-    {id:"d5", res:"aoai-dev", name:"gpt-5-nano-test", model:"gpt-5-nano", ver:"2025-08-07",
-     sku:"Standard", cap:"60K TPM", state:"creating", def:false, policy:"更新しない"}
+  /* Azure の階層: tenant → subscription → resource group → Azure Model Resource */
+  var azTenants = [{id:"contoso", name:"Contoso Corp"}];
+  var azSubs = [
+    {id:"0f3a…9c21", name:"Prod-AI", active:true},
+    {id:"7b21…4d10", name:"Sandbox-Dev", active:false}
   ];
+  var azResources = [
+    {id:"foundry-prod",   name:"foundry-prod",   rg:"rg-ai",  region:"japaneast", kind:"Foundry",
+     localAuth:true,  connected:true,  published:3},
+    {id:"aoai-dev",       name:"aoai-dev",       rg:"rg-dev", region:"eastus2",   kind:"Azure OpenAI",
+     localAuth:true,  connected:true,  published:2},
+    {id:"foundry-secure", name:"foundry-secure", rg:"rg-sec", region:"japaneast", kind:"Foundry",
+     localAuth:false, connected:false, published:0}
+  ];
+
+  function makeDeployments(){
+    return [
+      {id:"d1", res:"foundry-prod", name:"gpt-5-codex", model:"gpt-5-codex", ver:"2025-08-07",
+       sku:"GlobalStandard", cap:"500K TPM", state:"ok", def:true, policy:"マイナーバージョンを自動更新"},
+      {id:"d2", res:"foundry-prod", name:"gpt-5-high", model:"gpt-5", ver:"2025-08-07",
+       sku:"GlobalStandard", cap:"500K TPM", state:"ok", def:false, policy:"マイナーバージョンを自動更新"},
+      {id:"d3", res:"foundry-prod", name:"gpt-5-mini", model:"gpt-5-mini", ver:"2025-08-07",
+       sku:"GlobalStandard", cap:"250K TPM", state:"ok", def:false, policy:"更新しない"},
+      {id:"d4", res:"aoai-dev", name:"o4-mini-dev", model:"o4-mini", ver:"2025-04-16",
+       sku:"Standard", cap:"120K TPM", state:"failed", def:false, policy:"更新しない",
+       err:"403 AuthorizationFailed — 呼び出し元にこのリソースへの Cognitive Services User 権限がありません。"},
+      {id:"d5", res:"aoai-dev", name:"gpt-5-nano-test", model:"gpt-5-nano", ver:"2025-08-07",
+       sku:"Standard", cap:"60K TPM", state:"ok", def:false, policy:"更新しない"}
+    ];
+  }
+  var deployments = makeDeployments();
+  var newSeq = 0;
+
+  /* ---- ステージング（未反映の変更）---- */
+  function staged(){ return deployments.filter(function(d){ return !!d.stage; }); }
+  function stageCounts(){
+    var c = {add:0, edit:0, del:0};
+    staged().forEach(function(d){ c[d.stage]++; });
+    c.total = c.add + c.edit + c.del;
+    return c;
+  }
+  function resetStaged(){
+    deployments = makeDeployments();
+    newSeq = 0;
+  }
+  function seedStaged(){
+    resetStaged();
+    /* 追加 2 / 変更 1 / 削除 1 */
+    stageAdd({res:"foundry-prod", name:"gpt-5-codex-2", model:"gpt-5-codex", ver:"2025-08-07",
+              sku:"GlobalStandard", cap:"300K TPM", policy:"マイナーバージョンを自動更新", how:"作成"});
+    stageAdd({res:"aoai-dev", name:"o4-mini-eval", model:"o4-mini", ver:"2025-04-16",
+              sku:"Standard", cap:"80K TPM", policy:"更新しない", how:"公開"});
+    var d2 = byId("d2");
+    d2.stage = "edit";
+    d2.stageChanges = [{label:"Capacity", from:"500K TPM", to:"1,000K TPM"}];
+    d2.cap = "1,000K TPM";
+    byId("d4").stage = "del";
+  }
+  function byId(id){ return deployments.filter(function(x){ return x.id === id; })[0]; }
+  function stageAdd(o){
+    newSeq++;
+    deployments.push({
+      id:"n"+newSeq, res:o.res, name:o.name, model:o.model, ver:o.ver, sku:o.sku, cap:o.cap,
+      state:"ok", def:false, policy:o.policy, stage:"add", how:o.how || "作成"
+    });
+  }
+  function unstage(id){
+    var d = byId(id);
+    if (!d) return;
+    if (d.stage === "add"){
+      deployments = deployments.filter(function(x){ return x.id !== id; });
+    } else {
+      if (d.stage === "edit" && d.stageChanges){
+        d.stageChanges.forEach(function(c){
+          if (c.label === "Capacity") d.cap = c.from;
+          if (c.label === "バージョン") d.ver = c.from;
+          if (c.label === "自動更新ポリシー") d.policy = c.from;
+          if (c.label === "既定のモデル"){
+            d.def = false;
+            var prev = c.prevDefId ? byId(c.prevDefId) : null;
+            if (prev) prev.def = true;
+          }
+        });
+      }
+      d.stage = null; d.stageChanges = null;
+    }
+  }
 
   var stateMeta = {
     ok:      {cls:"ok",   text:"Codex で利用可"},
@@ -569,8 +695,10 @@
   var overlay = document.getElementById("overlay");
   var sel = document.getElementById("screenSelect");
   var current = "home";
+  var selectedDep = null;
 
   function show(id, on){ document.getElementById(id).hidden = !on; }
+  function renderHome(){ render(stageCounts().total ? "home-diff" : "home"); }
 
   function render(screen){
     current = screen;
@@ -584,26 +712,45 @@
     show("scr-home", !isSetup && !isSettings);
 
     if (isSetup) { renderSetup(screen === "setup-almost"); return; }
-    if (isSettings) return;
+    if (isSettings) { renderSettingsRes(); return; }
 
     /* ホーム系 */
     var empty = screen === "home-empty";
     show("homeEmpty", empty);
     document.getElementById("homeMain").hidden = empty;
-    document.getElementById("diffBanner").hidden = !(screen === "home-diff");
     document.getElementById("btnAddModel").hidden = empty;
+    renderBanner();
+    var live = deployments.filter(function(d){ return d.stage !== "add"; }).length;
     document.getElementById("homeSub").textContent = empty
       ? "公開しているモデルはありません"
-      : "2 つの Azure リソースから 5 件を公開しています";
-    if (!empty) renderList(screen === "home-detail" ? "d1" : null);
+      : "2 つの Azure リソースから " + live + " 件を公開しています";
+    if (!empty) renderList(screen === "home-detail" ? "d1" : selectedDep);
 
     if (screen === "add-modal")   openAddModal();
-    if (screen === "sync-confirm")  openConfirm("sync");
+    if (screen === "sync-confirm")  openConfirm();
     if (screen === "sync-progress") openProgress(2, null);
     if (screen === "sync-result")   openResult();
   }
 
-  sel.addEventListener("change", function(){ render(sel.value); });
+  function renderBanner(){
+    var c = stageCounts();
+    var b = document.getElementById("diffBanner");
+    b.hidden = c.total === 0;
+    if (c.total === 0) return;
+    var parts = [];
+    if (c.add) parts.push("追加 " + c.add);
+    if (c.edit) parts.push("変更 " + c.edit);
+    if (c.del) parts.push("削除 " + c.del);
+    document.getElementById("diffBannerText").innerHTML =
+      "未反映の変更が <b>" + c.total + " 件</b>（" + parts.join(" / ") + "）";
+  }
+
+  sel.addEventListener("change", function(){
+    if (sel.value === "home-diff" || sel.value.indexOf("sync-") === 0) seedStaged();
+    else if (sel.value === "home" || sel.value === "home-empty" || sel.value === "home-detail") resetStaged();
+    selectedDep = null;
+    render(sel.value);
+  });
   document.addEventListener("click", function(e){
     var g = e.target.closest("[data-goto]");
     if (g) render(g.getAttribute("data-goto"));
@@ -615,7 +762,26 @@
     return '<span class="badge '+m.cls+'"><span class="dot"></span>'+m.text+'</span>';
   }
 
+  var stageMeta = {
+    add:  {cls:"busy", text:"追加予定"},
+    edit: {cls:"warn", text:"変更あり"},
+    del:  {cls:"err",  text:"削除予定"}
+  };
+  function stageBadge(d){
+    var m = stageMeta[d.stage];
+    return '<span class="badge '+m.cls+'"><span class="dot"></span>'+m.text+'</span>';
+  }
+  function changeText(d){
+    if (d.stage === "add") return d.how === "公開" ? "既存のデプロイを Codex に公開します" : "Azure に新しく作成します";
+    if (d.stage === "del") return "Codex から外します（Azure の Deployment は残ります）";
+    if (d.stage === "edit" && d.stageChanges){
+      return d.stageChanges.map(function(c){ return c.label+" "+c.from+" → "+c.to; }).join(" / ");
+    }
+    return "";
+  }
+
   function renderList(selectedId){
+    selectedDep = selectedId || null;
     var pane = document.getElementById("listPane");
     var html = "";
     resources.forEach(function(r){
@@ -626,19 +792,32 @@
             + '<span class="region">'+r.region+'</span>'
             + '<span class="tiny muted">'+rows.length+' 件</span></div>';
       rows.forEach(function(d){
-        html += '<div class="row'+(d.id===selectedId?" selected":"")+'" data-dep="'+d.id+'">'
+        var cls = "row" + (d.id===selectedId?" selected":"")
+                + (d.stage?" staged":"") + (d.stage==="del"?" staged-del":"");
+        html += '<div class="'+cls+'" data-dep="'+d.id+'">'
               + '<span class="star'+(d.def?"":" off")+'" title="'+(d.def?"既定のモデル":"既定にする")+'">★</span>'
               + '<div class="name"><div class="n">'+d.name+'</div>'
               + '<div class="m">'+d.model+' · '+d.ver+'</div></div>'
               + '<div class="sku">'+d.sku+' · '+d.cap+'</div>'
-              + '<div class="state">'+badge(d.state)+'</div>'
+              + '<div class="state">'+(d.stage?stageBadge(d):badge(d.state))+'</div>'
+              + '<div class="acts">'
+              + (d.stage?'<button class="btn subtle tinybtn" data-undo="'+d.id+'">取り消す</button>':'')
               + '<button class="btn icon more" title="その他の操作">…</button>'
+              + '</div>'
+              + (d.stage?'<div class="chg">'+changeText(d)+'</div>':'')
               + '</div>';
       });
       html += "</div>";
     });
     pane.innerHTML = html;
 
+    pane.querySelectorAll("[data-undo]").forEach(function(el){
+      el.addEventListener("click", function(e){
+        e.stopPropagation();
+        unstage(el.getAttribute("data-undo"));
+        renderHome();
+      });
+    });
     pane.querySelectorAll(".row").forEach(function(el){
       el.addEventListener("click", function(){
         renderList(el.getAttribute("data-dep"));
@@ -646,7 +825,7 @@
     });
 
     var det = document.getElementById("detailPane");
-    if (!selectedId) { det.hidden = true; det.innerHTML = ""; return; }
+    if (!selectedId || !byId(selectedId)) { det.hidden = true; det.innerHTML = ""; selectedDep = null; return; }
     det.hidden = false;
     renderDetail(selectedId);
   }
@@ -671,34 +850,82 @@
       +   '<div class="field" style="margin-top:'+(errBlock?"16px":"0")+'"><label>モデル</label>'
       +     '<div class="val">'+d.model+'</div></div>'
       +   '<div class="field"><label>バージョン</label>'
-      +     '<select><option>'+d.ver+'（現在）</option><option>2025-06-12</option></select></div>'
+      +     '<select id="detVer"><option>'+d.ver+'</option><option>2025-06-12</option>'
+      +     '<option>2025-08-07</option></select></div>'
       +   '<div class="field"><label>自動更新ポリシー</label>'
-      +     '<select><option>'+d.policy+'</option><option>更新しない</option>'
+      +     '<select id="detPolicy"><option>'+d.policy+'</option><option>更新しない</option>'
       +     '<option>マイナーバージョンを自動更新</option><option>常に最新へ更新</option></select></div>'
       +   '<div class="field"><label>SKU</label><div class="val">'+d.sku+'</div></div>'
       +   '<div class="field"><label>Capacity（'+d.cap.split(" ")[1]+'）</label>'
-      +     '<div class="capline"><input type="range" min="10" max="1000" value="'
+      +     '<div class="capline"><input type="range" id="detCapRange" min="10" max="1000" step="10" value="'
       +       parseInt(d.cap.replace(/[^0-9]/g,""),10) + '">'
-      +     '<div class="num"><input type="text" value="'+d.cap.split(" ")[0]+'"></div></div>'
-      +     '<div class="tiny muted" style="margin-top:6px">変更は「Codex へ反映」で Azure に適用されます。</div>'
+      +     '<div class="num"><input type="text" id="detCapNum" value="'+d.cap.split(" ")[0]+'"></div></div>'
+      +     '<div class="tiny muted" style="margin-top:6px">「変更を保存」すると未反映の変更になります。Azure へは「Codex へ反映」でまとめて適用します。</div>'
       +   '</div>'
       + '</div>'
       + '<div class="detail-foot">'
-      +   '<button class="btn primary" id="detailApply">変更を保存して Codex へ反映</button>'
+      +   '<button class="btn primary" id="detailApply">変更を保存</button>'
       +   '<div style="display:flex;gap:8px">'
-      +     '<button class="btn" style="flex:1"'+(d.def?" disabled":"")+'>既定に設定</button>'
+      +     '<button class="btn" id="detailDefault" style="flex:1"'+(d.def?" disabled":"")+'>既定に設定</button>'
       +     '<button class="btn" style="flex:1">Azure Portal で開く</button>'
       +   '</div>'
-      +   '<button class="btn danger-text">Codex から外す</button>'
+      +   (d.stage
+          ? '<button class="btn subtle" data-undo-detail="'+d.id+'">この行の変更を取り消す</button>'
+          : '<button class="btn danger-text" id="detailRemove">Codex から外す</button>')
       + '</div>';
 
+    var rng = document.getElementById("detCapRange"), cnum = document.getElementById("detCapNum");
+    if (rng) rng.addEventListener("input", function(){ cnum.value = fmtCap(rng.value); });
+
     var ap = document.getElementById("detailApply");
-    if (ap) ap.addEventListener("click", function(){ openConfirm("sync"); });
+    if (ap) ap.addEventListener("click", function(){
+      var changes = [];
+      var newVer = document.getElementById("detVer").value;
+      var newPolicy = document.getElementById("detPolicy").value;
+      var newCap = fmtCap(cnum.value) + " " + d.cap.split(" ")[1];
+      if (newVer !== d.ver) changes.push({label:"バージョン", from:d.ver, to:newVer});
+      if (newPolicy !== d.policy) changes.push({label:"自動更新ポリシー", from:d.policy, to:newPolicy});
+      if (newCap !== d.cap) changes.push({label:"Capacity", from:d.cap, to:newCap});
+      if (!changes.length) return;
+      d.stageChanges = (d.stageChanges || []).concat(changes);
+      d.stage = "edit";
+      d.ver = newVer; d.policy = newPolicy; d.cap = newCap;
+      renderHome();
+    });
+
+    var df = document.getElementById("detailDefault");
+    if (df) df.addEventListener("click", function(){
+      var prev = deployments.filter(function(x){ return x.def; })[0];
+      if (prev) prev.def = false;
+      d.def = true;
+      d.stageChanges = (d.stageChanges || []).concat(
+        [{label:"既定のモデル", from:"いいえ", to:"はい", prevDefId: prev ? prev.id : null}]);
+      if (!d.stage) d.stage = "edit";
+      renderHome();
+    });
+
+    var rm = document.getElementById("detailRemove");
+    if (rm) rm.addEventListener("click", function(){
+      d.stage = "del"; d.stageChanges = null;
+      renderHome();
+    });
+
+    var ud = det.querySelector("[data-undo-detail]");
+    if (ud) ud.addEventListener("click", function(){
+      unstage(ud.getAttribute("data-undo-detail"));
+      renderHome();
+    });
+  }
+
+  function fmtCap(v){
+    var n = parseInt(String(v).replace(/[^0-9]/g,""),10) || 0;
+    return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",") + "K";
   }
 
   /* ============ セットアップ ============ */
   var setupSteps = [
     {el:"chk-azure", need:true},
+    {el:"chk-res",   need:true},
     {el:"chk-node",  need:false},
     {el:"chk-ocx",   need:false},
     {el:"chk-svc",   need:true}
@@ -718,10 +945,13 @@
     var btn   = document.getElementById("setupMainBtn");
     var note  = document.getElementById("setupNote");
 
+    renderResPick(almost);
+
     if (!almost){
       title.textContent = "はじめる準備";
-      lead.textContent = "Azure のモデルを Codex から使えるようにするために、4 つの項目を確認します。自動でできることは Bridge が行います。";
+      lead.textContent = "Azure のモデルを Codex から使えるようにするために、5 つの項目を確認します。自動でできることは Bridge が行います。";
       setMark("chk-azure","need","!"); setAct("chk-azure",'<span class="badge warn"><span class="dot"></span>承認が必要</span>');
+      setMark("chk-res","wait","…");   setAct("chk-res",'<span class="tiny muted">Azure サインイン後に選べます</span>');
       setMark("chk-node","done","✓");  setAct("chk-node",'<span class="tiny muted">v20.14.0 / npm 10.7.0</span>');
       setMark("chk-ocx","wait","…");   setAct("chk-ocx",'<span class="tiny muted">Azure サインイン後に確認します</span>');
       setMark("chk-svc","wait","…");   setAct("chk-svc",'<span class="tiny muted">opencodex 導入後に登録します</span>');
@@ -731,6 +961,7 @@
       title.textContent = "あと少しです";
       lead.textContent = "サービスの登録まで終わりました。モデルを追加すると Codex から使えるようになります。";
       setMark("chk-azure","done","✓"); setAct("chk-azure",'<span class="tiny muted">atsushi_a_nakamura@jp.ricoh.com</span>');
+      setMark("chk-res","done","✓");   setAct("chk-res",'<span class="tiny muted" id="resPickCount">選択済み 2 件</span>');
       setMark("chk-node","done","✓");  setAct("chk-node",'<span class="tiny muted">v20.14.0 / npm 10.7.0</span>');
       setMark("chk-ocx","done","✓");   setAct("chk-ocx",'<span class="tiny muted">v0.9.3 を導入しました</span>');
       setMark("chk-svc","done","✓");   setAct("chk-svc",'<span class="badge ok"><span class="dot"></span>実行中 · ポート 8123</span>');
@@ -752,6 +983,60 @@
     };
   }
 
+  /* ---- 初期セットアップ内の Azure リソース選択 ---- */
+  function resMetaText(r){
+    return r.rg + " · " + r.region + " · " + r.kind;
+  }
+  function renderResPick(enabled){
+    var card = document.getElementById("chk-res");
+    var body = document.getElementById("resPickBody");
+    card.classList.toggle("disabled", !enabled);
+    if (!enabled){ body.innerHTML = ""; return; }
+
+    var subOpts = azSubs.map(function(s){
+      return '<option'+(s.active?" selected":"")+'>'+s.name+'（'+s.id+'）</option>';
+    }).join("");
+
+    var items = azResources.map(function(r){
+      var off = !r.localAuth;
+      return '<label class="resitem'+(off?" off":"")+'">'
+           + '<input type="checkbox" data-res="'+r.id+'"'+(off?" disabled":"")
+           +   (r.connected && !off?" checked":"")+'>'
+           + '<span><span class="rn">'+r.name+'</span>'
+           + '<span class="rm">'+resMetaText(r)+'</span>'
+           + (off?'<span class="rm" style="color:var(--warn)">API key 認証が無効のため Codex から使えません</span>':'')
+           + '</span></label>';
+    }).join("");
+
+    body.innerHTML =
+      '<div class="subline"><span class="k">テナント</span>'
+      + '<span style="font-size:13px">'+azTenants[0].name+'</span>'
+      + '<span class="tiny muted">（アクセスできるテナントは 1 つです）</span></div>'
+      + '<div class="subline"><span class="k">サブスクリプション</span>'
+      +   '<select id="setupSubSel">'+subOpts+'</select></div>'
+      + '<div class="tiny muted" style="margin-top:12px">このサブスクリプションで見つかった Azure Model Resource</div>'
+      + '<div class="reslist">'+items+'</div>';
+
+    body.querySelectorAll("[data-res]").forEach(function(cb){
+      cb.addEventListener("change", function(){
+        var r = azResources.filter(function(x){ return x.id === cb.getAttribute("data-res"); })[0];
+        r.connected = cb.checked;
+        updateResPickCount();
+      });
+    });
+    updateResPickCount();
+  }
+  function connectedResources(){
+    return azResources.filter(function(r){ return r.connected && r.localAuth; });
+  }
+  function updateResPickCount(){
+    var n = connectedResources().length;
+    setAct("chk-res", n
+      ? '<span class="tiny muted">選択済み '+n+' 件</span>'
+      : '<span class="badge warn"><span class="dot"></span>1 件以上選んでください</span>');
+    setMark("chk-res", n ? "done" : "need", n ? "✓" : "!");
+  }
+
   /* ============ モーダル基盤 ============ */
   function mount(html){
     overlay.innerHTML = '<div class="scrim">'+html+'</div>';
@@ -760,7 +1045,7 @@
   function closeModal(){
     overlay.innerHTML = "";
     if (["add-modal","sync-confirm","sync-progress","sync-result"].indexOf(current) >= 0){
-      render("home");
+      renderHome();
     }
   }
 
@@ -774,10 +1059,19 @@
   ];
 
   var unpublished = [
-    {name:"gpt-5-codex-2", res:"rg-ai / foundry-prod", model:"gpt-5-codex · 2025-08-07", sku:"GlobalStandard · 300K TPM"},
-    {name:"gpt-41-legacy", res:"rg-ai / foundry-prod", model:"gpt-4.1 · 2025-04-14",     sku:"Standard · 200K TPM"},
-    {name:"o4-mini-eval",  res:"rg-dev / aoai-dev",    model:"o4-mini · 2025-04-16",     sku:"Standard · 80K TPM"}
+    {name:"gpt-5-codex-2", resId:"foundry-prod", res:"rg-ai / foundry-prod", model:"gpt-5-codex", ver:"2025-08-07",
+     sku:"GlobalStandard", cap:"300K TPM"},
+    {name:"gpt-41-legacy", resId:"foundry-prod", res:"rg-ai / foundry-prod", model:"gpt-4.1",     ver:"2025-04-14",
+     sku:"Standard", cap:"200K TPM"},
+    {name:"o4-mini-eval",  resId:"aoai-dev",     res:"rg-dev / aoai-dev",    model:"o4-mini",     ver:"2025-04-16",
+     sku:"Standard", cap:"80K TPM"}
   ];
+
+  function resOptions(){
+    return connectedResources().map(function(r){
+      return '<option value="'+r.id+'">'+r.rg+' / '+r.name+'（'+r.region+'）</option>';
+    }).join("") + '<option value="__connect">他のリソースを接続…</option>';
+  }
 
   function openAddModal(tab){
     tab = tab || "new";
@@ -793,9 +1087,8 @@
     var newTabBody =
       '<div class="grid2">'
       + '<div class="field"><label>Azure リソース</label>'
-      +   '<select><option>rg-ai / foundry-prod（japaneast）</option>'
-      +   '<option>rg-dev / aoai-dev（eastus2）</option></select>'
-      +   '<div class="tiny muted" style="margin-top:5px">前回と同じリソースを選んでいます。</div></div>'
+      +   '<select id="addResSel">' + resOptions() + '</select>'
+      +   '<div class="tiny muted" style="margin-top:5px">設定で接続したリソースだけが表示されます。</div></div>'
       + '<div class="field"><label>デプロイ名</label>'
       +   '<input type="text" id="depName" value="gpt-5-codex">'
       +   '<div class="tiny muted" style="margin-top:5px">モデル名から自動で入ります。Codex にはこの名前で表示されます。</div></div>'
@@ -834,9 +1127,9 @@
       + '<table class="pubtable"><thead><tr>'
       + '<th style="width:32px"></th><th>デプロイ名</th><th>モデル</th><th>SKU / Capacity</th></tr></thead><tbody>'
       + unpublished.map(function(u,i){
-          return '<tr><td><input type="checkbox"'+(i===0?" checked":"")+'></td>'
+          return '<tr><td><input type="checkbox" data-unpub="'+i+'"'+(i===0?" checked":"")+'></td>'
                + '<td><b>'+u.name+'</b><div class="tiny muted">'+u.res+'</div></td>'
-               + '<td>'+u.model+'</td><td class="tiny muted">'+u.sku+'</td></tr>';
+               + '<td>'+u.model+' · '+u.ver+'</td><td class="tiny muted">'+u.sku+' · '+u.cap+'</td></tr>';
         }).join("")
       + '</tbody></table>';
 
@@ -852,10 +1145,12 @@
       + '</div>'
       + '<div class="modal-body">'+(isNew?newTabBody:existingBody)+'</div>'
       + '<div class="modal-foot">'
-      +   '<span class="tiny muted">Azure に作成すると課金が発生します。</span>'
+      +   '<span class="tiny muted">'+(isNew
+            ? "この時点では Azure に作成されません。「Codex へ反映」でまとめて実行します。"
+            : "この時点では公開されません。「Codex へ反映」でまとめて実行します。")+'</span>'
       +   '<span class="spacer"></span>'
       +   '<button class="btn" data-close>キャンセル</button>'
-      +   '<button class="btn primary" id="addNext">'+(isNew?"作成して Codex へ反映":"Codex へ反映")+'</button>'
+      +   '<button class="btn primary" id="addNext">'+(isNew?"追加":"公開対象に追加")+'</button>'
       + '</div></div>'
     );
 
@@ -887,54 +1182,98 @@
         });
       });
     }
+    var resSel = m.querySelector("#addResSel");
+    if (resSel){
+      resSel.addEventListener("change", function(){
+        if (resSel.value === "__connect"){
+          overlay.innerHTML = "";
+          render("settings");
+        }
+      });
+    }
+
     m.querySelector("[data-close]").addEventListener("click", closeModal);
     m.querySelector("#addNext").addEventListener("click", function(){
-      openConfirm(isNew ? "create" : "sync");
+      if (isNew){
+        var resId = resSel ? resSel.value : "foundry-prod";
+        if (resId === "__connect") return;
+        var adv = m.querySelectorAll("details.adv select");
+        stageAdd({
+          res: resId,
+          name: (m.querySelector("#depName").value || "new-deployment"),
+          model: (m.querySelector(".opt.sel") || {getAttribute:function(){return "gpt-5-codex";}}).getAttribute("data-model"),
+          ver: adv[0] ? adv[0].value.replace("（最新）","") : "2025-08-07",
+          sku: adv[1] ? adv[1].value : "GlobalStandard",
+          cap: fmtCap(m.querySelector("#capNum").value) + " TPM",
+          policy: adv[2] ? adv[2].value.replace("（推奨）","") : "マイナーバージョンを自動更新",
+          how: "作成"
+        });
+      } else {
+        m.querySelectorAll("[data-unpub]").forEach(function(cb){
+          if (!cb.checked) return;
+          var u = unpublished[parseInt(cb.getAttribute("data-unpub"),10)];
+          stageAdd({res:u.resId, name:u.name, model:u.model, ver:u.ver, sku:u.sku, cap:u.cap,
+                    policy:"更新しない", how:"公開"});
+        });
+      }
+      overlay.innerHTML = "";
+      renderHome();
     });
   }
 
   /* ============ 確認ステップ ============ */
-  function openConfirm(kind){
-    var isCreate = kind === "create";
-    var rows = isCreate
-      ? '<dl>'
-      +   '<dt>Azure リソース</dt><dd>rg-ai / foundry-prod（japaneast）</dd>'
-      +   '<dt>作成するデプロイ</dt><dd><b>gpt-5-codex</b></dd>'
-      +   '<dt>モデル</dt><dd>gpt-5-codex · 2025-08-07</dd>'
-      +   '<dt>SKU / Capacity</dt><dd>GlobalStandard · 500K TPM</dd>'
-      +   '<dt>自動更新</dt><dd>マイナーバージョンを自動更新</dd>'
-      + '</dl>'
-      : '<dl>'
-      +   '<dt>反映するもの</dt><dd><b>gpt-5-mini</b> を Codex に公開<br><b>gpt-5</b> の Capacity を 500K → 1,000K TPM に変更</dd>'
-      +   '<dt>対象リソース</dt><dd>rg-ai / foundry-prod（japaneast）</dd>'
-      +   '<dt>opencodex</dt><dd>Provider「azure-foundry-prod」を更新</dd>'
-      + '</dl>';
+  function confirmActionText(d){
+    if (d.stage === "add"){
+      return d.how === "公開"
+        ? "既存の Deployment を Codex に公開（" + d.sku + " · " + d.cap + "）"
+        : "Azure に Deployment を作成（" + d.model + " · " + d.ver + " · " + d.sku + " · " + d.cap + "）";
+    }
+    if (d.stage === "del") return "Codex から外す（Azure の Deployment は削除しません）";
+    return (d.stageChanges || []).map(function(c){ return c.label+" を "+c.from+" → "+c.to+" に変更"; }).join("<br>");
+  }
 
+  function openConfirm(){
+    var c = stageCounts();
+    var rows = "";
+    resources.forEach(function(r){
+      var list = staged().filter(function(d){ return d.res === r.id; });
+      if (!list.length) return;
+      rows += '<div style="margin-top:14px"><div class="tiny muted" style="margin-bottom:6px">'
+            + r.label + '（' + r.region + '） · Provider「azure-' + r.id + '」を更新</div><dl>';
+      list.forEach(function(d){
+        rows += '<dt>' + stageMeta[d.stage].text.replace("予定","").replace("あり","")
+              + '</dt><dd><b>'+d.name+'</b><br>'+confirmActionText(d)+'</dd>';
+      });
+      rows += '</dl></div>';
+    });
+    if (!rows) rows = '<div class="tiny muted">未反映の変更はありません。</div>';
+    rows = '<div class="tiny muted">未反映の変更 '+c.total+' 件（追加 '+c.add+' / 変更 '+c.edit+' / 削除 '+c.del+'）</div>'
+         + rows;
+
+    var isCreate = c.add > 0;
     var m = mount(
       '<div class="modal">'
       + '<div class="modal-head"><h2>実行する内容の確認</h2>'
-      +   '<div class="s">次の内容で Azure と opencodex を更新します。</div></div>'
+      +   '<div class="s">未反映の変更をまとめて Azure と opencodex に適用します。</div></div>'
       + '<div class="modal-body">'
       +   '<div class="summary-box">'+rows+'</div>'
       +   '<div class="notice warn"><span>⚠</span><div>反映後の接続テストは Azure に実際のリクエストを送ります。ごく少額ですが<b>課金が発生します</b>。'
-      +     (isCreate?' また、デプロイの作成自体も課金対象です。':'')+'</div></div>'
+      +     (isCreate?' また、Azure に作成する Deployment 自体も課金対象です。':'')+'</div></div>'
       +   '<label class="chk"><input type="checkbox" checked>'
       +     '<span>反映後に <b>Codex を再起動</b>する（Codex はモデル一覧を起動時に読み込むため、再起動しないと新しいモデルが表示されないことがあります）</span></label>'
       + '</div>'
       + '<div class="modal-foot"><span class="spacer"></span>'
       +   '<button class="btn" data-back>戻る</button>'
-      +   '<button class="btn primary" id="goRun">'+(isCreate?"作成して反映する":"反映する")+'</button>'
+      +   '<button class="btn primary" id="goRun">反映する</button>'
       + '</div></div>'
     );
-    m.querySelector("[data-back]").addEventListener("click", function(){
-      if (isCreate) openAddModal("new"); else closeModal();
-    });
-    m.querySelector("#goRun").addEventListener("click", function(){ runProgress(isCreate); });
+    m.querySelector("[data-back]").addEventListener("click", closeModal);
+    m.querySelector("#goRun").addEventListener("click", function(){ runProgress(); });
   }
 
   /* ============ 進行状況 ============ */
   var stepDefs = [
-    {t:"Azure に Model Deployment を作成", d:"gpt-5-codex（GlobalStandard · 500K TPM）"},
+    {t:"Azure の Model Deployment を作成・更新", d:"作成 0 件 / 更新 0 件"},
     {t:"opencodex の Provider を更新",     d:"azure-foundry-prod にエンドポイントと API キーを登録"},
     {t:"Codex のカタログを同期",           d:"モデル一覧を書き出して Codex に読み込ませる"},
     {t:"接続テスト",                       d:"各デプロイに小さなリクエストを 1 回送信"}
@@ -956,6 +1295,9 @@
   }
 
   function openProgress(activeIndex, failIndex){
+    var c = stageCounts();
+    stepDefs[0].d = "作成 " + c.add + " 件 / 更新 " + c.edit + " 件";
+    stepDefs[2].d = "モデル一覧を書き出して Codex に読み込ませる（削除 " + c.del + " 件を含む）";
     mount(
       '<div class="modal">'
       + '<div class="modal-head"><h2>反映しています</h2>'
@@ -1014,16 +1356,61 @@
     );
     m.querySelector("#resultDone").addEventListener("click", function(){
       overlay.innerHTML = "";
+      resetStaged();
+      selectedDep = null;
       render("home");
     });
     m.querySelector("#retryFailed").addEventListener("click", function(){ runProgress(); });
   }
 
+  /* ============ 設定：Azure セクション ============ */
+  function renderSettingsRes(){
+    var host = document.getElementById("settingsResList");
+    if (!host) return;
+    var list = connectedResources();
+    host.innerHTML = list.length ? list.map(function(r){
+      return '<div class="srow">'
+        + '<div class="txt"><div class="t">'+r.name+'</div>'
+        + '<div class="d">'+resMetaText(r)+' ／ 公開中のモデル '+r.published+' 件</div></div>'
+        + '<button class="btn icon" data-disconnect="'+r.id+'" title="その他の操作">…</button>'
+        + '</div>';
+    }).join("") : '<div class="srow"><div class="txt"><div class="d">接続中のリソースはありません。</div></div></div>';
+
+    host.querySelectorAll("[data-disconnect]").forEach(function(b){
+      b.addEventListener("click", function(){
+        openDisconnect(b.getAttribute("data-disconnect"));
+      });
+    });
+  }
+
+  function openDisconnect(id){
+    var r = azResources.filter(function(x){ return x.id === id; })[0];
+    var m = mount(
+      '<div class="modal" style="width:520px">'
+      + '<div class="modal-head"><h2>Codex から切断しますか？</h2>'
+      +   '<div class="s">'+r.name+'（'+resMetaText(r)+'）</div></div>'
+      + '<div class="modal-body">'
+      +   '<div class="notice warn"><span>⚠</span><div>このリソースから公開中の <b>'+r.published+' 件</b>のモデルが Codex から見えなくなります。'
+      +     '<b>Azure 側の Deployment は削除しません。</b></div></div>'
+      + '</div>'
+      + '<div class="modal-foot"><span class="spacer"></span>'
+      +   '<button class="btn" data-close>キャンセル</button>'
+      +   '<button class="btn primary" data-ok>切断する</button>'
+      + '</div></div>'
+    );
+    m.querySelector("[data-close]").addEventListener("click", function(){ overlay.innerHTML = ""; });
+    m.querySelector("[data-ok]").addEventListener("click", function(){ overlay.innerHTML = ""; });
+  }
+
   /* ============ ホームのボタン配線 ============ */
   document.getElementById("btnAddModel").addEventListener("click", function(){ openAddModal("new"); });
   document.getElementById("btnAddModelEmpty").addEventListener("click", function(){ openAddModal("new"); });
-  document.getElementById("btnSyncFromBanner").addEventListener("click", function(){ openConfirm("sync"); });
-  document.getElementById("btnDiscardDiff").addEventListener("click", function(){ render("home"); });
+  document.getElementById("btnSyncFromBanner").addEventListener("click", function(){ openConfirm(); });
+  document.getElementById("btnDiscardDiff").addEventListener("click", function(){
+    resetStaged(); selectedDep = null; render("home");
+  });
+  document.getElementById("btnAddResource").addEventListener("click", function(){ render("setup-almost"); });
+  document.getElementById("btnChangeSub").addEventListener("click", function(){ render("setup-almost"); });
 
   render("home");
 })();
