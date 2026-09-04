@@ -1,67 +1,48 @@
 # foundry-codex-bridge
 
-Microsoft Foundry / Azure OpenAI の deployment を opencodex 経由で Codex から利用するための Windows GUI 管理ツール。
+Microsoft Foundry / Azure OpenAI の Model Deployment を、ローカルプロキシ opencodex 経由で Codex から使えるようにする Windows デスクトップアプリ。
 
-## 現在の状態
+## 現状
 
-Issue #2 の第1段階とIssue #3の第2段階を実装済み。Wails v2 のデスクトップ画面から Azure の既存 Model Resource と複数の Model Deployment を選択し、明示的な Sync 操作で opencodex の Provider、PrimaryKey、モデル、Codex カタログを順番に反映できる。
+UX を全面的に見直すため、作り直しの準備段階にある。
 
-Azure認証にはAzure CLIのログイン済み資格情報を使用する。Bridge独自のEntraアプリを利用者Tenantへ追加せず、Client IDやclient secretを要求しない。Bridgeの設定ファイルにはsecretを保存しない。Azure CLI、Node.js、npmは事前に導入しておく必要があり、Bridgeは自動導入しない。
+- `mock/index.html`: 作り直し後の UI の静的モック。ブラウザで開くだけで動き、左上のドロップダウンで全画面・全状態を切り替えられる。次の実装はこのモックを正とする。
+- `poc/`: Wails v2 で作った実証実装（第1〜3段階）。動作するが UX は考慮していない。Azure / opencodex とのやり取りの実装詳細を参照する目的で残している。新規実装には流用しない。
+- `docs/`, `CONTEXT.md`: 実証実装の時点で書いた設計ドキュメント、ADR、用語集。システム境界と責務分担（Codex 設定の注入は opencodex に委ねる、Azure 認証は Azure CLI のセッションを借りる、secret を保存しない、など）は作り直し後も引き継ぐ。画面構成に関する記述はモックに置き換わる。
 
-実際のAzure接続とResponses接続テストには、Azure CLI、Azureのアクセス権、既存のAzure Model ResourceとModel Deploymentが必要である。Connect画面から`az login`を開始でき、既存のAzure CLIログインも再利用する。
+作り直しでは Wails v3 を使う。
 
-## 開発要件
+## モックが表す UX の要点
 
-- Windows
-- Azure CLI
-- Node.js 18 以上と npm
-- mise
+- 初回起動は「はじめる準備」のチェックリスト 1 画面。Azure サインイン、Azure リソース選択、Node.js / npm、opencodex、バックグラウンドサービスを自動で検出・実行し、利用者の手が要るもの（ブラウザでの `az login` 承認、UAC 承認）だけを求める。この画面は通常時も「設定」として到達できる。
+- Azure リソースの選択は、アクセスできる全テナント × 全サブスクリプションを並列に走査し、見つかった Foundry / Azure OpenAI リソースを 1 つのフラット一覧に届いた順で表示する。テナントやサブスクリプションを利用者に掘り下げさせない。
+- ホームは接続中リソース配下の全 Model Deployment の一覧。Codex から使わない Deployment も表示し、行ごとの「Codex で使う」トグルで公開対象を選ぶ。
+- Azure への操作（Deployment 作成、Capacity / version 変更）は確認の上で即時実行する。Codex への公開の切替と既定モデルの変更だけをまとめて「Codex へ反映」で適用する。反映待ちは画面下部のバナーに出す。
+- Codex の再起動は、どの導線からでも必ず確認ダイアログを経る。
 
-Azure CLI、Node.js、npm、miseは`PATH`から実行できる必要がある。GoとWailsはmiseで導入・固定する。Node.jsとAzure CLIは自動導入しない。
+## 開発者向けオンボーディング
 
-最初に開発環境を初期化し、診断を通す。
+### モックを見る
+
+`mock/index.html` をブラウザで開く。ビルド不要。
+
+### 実証実装（poc）を動かす
+
+必要なもの: Windows、Azure CLI、Node.js 18 以上と npm、mise。いずれも `PATH` から実行できること。Go と Wails は mise が導入する。
 
 ```powershell
+cd poc
 mise trust
 mise run init
 mise run doctor
-```
-
-`mise run doctor`はプロジェクトの開発環境診断である。mise本体の診断は`mise doctor`で実行する。`init`がmise shimsをユーザー`PATH`とPowerShell profileへ登録した後、新しいPowerShell sessionで`mise doctor`を実行する。
-
-開発モードでアプリを起動する。
-
-```powershell
 mise run dev
 ```
 
-テストとproduction buildをまとめて実行する。
+テストと production build は `mise run build`。詳細は `docs/development.md`。
 
-```powershell
-mise run build
-```
+### 読む順番
 
-`ocx` が PATH にない場合、GUI の「利用者の承認でopencodexを導入」から npm を使って `%LOCALAPPDATA%\FoundryCodexBridge\opencodex` に導入する。グローバル npm 環境と PATH は変更しない。
-
-## 現在の実装境界
-
-- 対象は Public Azure の `kind = AIServices` または `kind = OpenAI` の既存リソースと、通常の既存 Model Deployment だけである。
-- Azure Model Resource の作成、Deployment の作成・更新、Marketplace 契約、Azure RBAC の変更は行わない。
-- local authentication が無効なリソースは、API key を使う現行 opencodex アダプターの制約により Sync 対象外とする。
-- 起動時は読み取り専用で、Provider、Catalog、service、接続テストを自動変更しない。
-- Sync の接続テストは実際の Azure リクエストになるため、画面上の確認が必要である。
-- 初回のservice登録または修復ではWindowsのUAC確認が表示される。Bridgeは公開`ocx service`を昇格起動し、Task Schedulerの管理はopencodexに委ねる。
-- 1つのProviderへ複数Deploymentを公開し、そのうち1件を既定モデルにできる。
-- 複数のBridge-managed Providerを保持し、Sync前の差分確認と安全なDisconnectを行える。
-- opencodexのstart、stop、status、service修復、port変更、最新版への更新をGUIから明示実行できる。
-- Bridgeが管理しないProviderとComboは変更しない。Comboが参照するProviderのDisconnectは拒否する。
-
-## 設計ドキュメント
-
-- [アーキテクチャ](./docs/architecture.md)
-- [リポジトリ構成](./docs/repository-structure.md)
-- [開発手順](./docs/development.md)
-- [第1段階 実機検証記録](./docs/phase-1-validation.md)
-- [第2段階 検証記録](./docs/phase-2-validation.md)
-- [用語集](./CONTEXT.md)
-- [ADR](./docs/adr/)
+1. `CONTEXT.md` — 用語。Azure Model Resource、Model Deployment、Bridge-managed Provider、Sync の意味を先に揃える。
+2. `mock/index.html` — 作り直し後の画面と状態遷移。
+3. `docs/architecture.md` と `docs/adr/` — 変えない境界と、その理由。
+4. `poc/internal/` — Azure SDK と `ocx` CLI をどう叩いているかの実例。
