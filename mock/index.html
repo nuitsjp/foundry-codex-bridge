@@ -120,11 +120,11 @@
   /* ---------- 固定バナー ---------- */
   .banner{
     flex:0 0 auto;display:flex;align-items:center;gap:12px;padding:10px 20px;
-    background:var(--warn-soft);border-bottom:1px solid #f0e0b8;font-size:13px;color:#6b4a00;
+    background:var(--warn-soft);border-top:1px solid #f0e0b8;font-size:13px;color:#6b4a00;
   }
   .banner .ico{font-size:14px}
   .banner .spacer{margin-left:auto}
-  .banner.info{background:var(--accent-soft);border-bottom-color:#cfe3f5;color:#0b4a80}
+  .banner.info{background:var(--accent-soft);border-top-color:#cfe3f5;color:#0b4a80}
 
   /* ---------- ホーム本体 ---------- */
   .home-main{flex:1;min-height:0;display:flex}
@@ -504,21 +504,6 @@
         <button class="btn primary" id="btnAddModel">＋ モデルを追加</button>
       </div>
 
-      <div class="banner" id="diffBanner" hidden>
-        <span class="ico">●</span>
-        <span id="diffBannerText">未反映の変更があります</span>
-        <span class="spacer"></span>
-        <button class="btn subtle" id="btnDiscardDiff">すべて取り消す</button>
-        <button class="btn primary" id="btnSyncFromBanner">Codex へ反映</button>
-      </div>
-
-      <div class="banner info" id="restartBanner" hidden>
-        <span class="ico">ℹ</span>
-        <span>Codex の再起動待ち — 新しいモデル一覧は Codex を再起動すると反映されます</span>
-        <span class="spacer"></span>
-        <button class="btn" id="btnRestartFromBanner">Codex を再起動…</button>
-      </div>
-
       <div class="home-main" id="homeMain">
         <div class="list-pane" id="listPane"><!-- JS で描画 --></div>
         <aside class="detail" id="detailPane" hidden></aside>
@@ -529,6 +514,22 @@
         <p>接続中の Azure リソースに Model Deployment がありません。モデルを追加すると、ここに一覧が表示されます。</p>
         <button class="btn primary big" id="btnAddModelEmpty">＋ モデルを追加</button>
       </div>
+
+      <div class="banner info" id="restartBanner" hidden>
+        <span class="ico">ℹ</span>
+        <span>Codex の再起動待ち — 新しいモデル一覧は Codex を再起動すると反映されます</span>
+        <span class="spacer"></span>
+        <button class="btn" id="btnRestartFromBanner">Codex を再起動…</button>
+      </div>
+
+      <div class="banner" id="diffBanner" hidden>
+        <span class="ico">●</span>
+        <span id="diffBannerText">未反映の変更があります</span>
+        <span class="spacer"></span>
+        <button class="btn subtle" id="btnDiscardDiff">すべて取り消す</button>
+        <button class="btn primary" id="btnSyncFromBanner">Codex へ反映</button>
+      </div>
+
     </section>
 
     <!-- ================= 設定 ================= -->
