@@ -247,6 +247,20 @@
   .subline{display:flex;align-items:center;gap:10px;margin-top:10px}
   .subline > span.k{font-size:12px;color:var(--text-2);flex:0 0 118px}
   .subline > select{flex:1}
+
+  /* Azure リソースのフラット走査 */
+  .scan{margin-top:11px}
+  .scan .scanstat{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-2);min-height:16px}
+  .scan .progressbar{margin:6px 0 10px}
+  .scan input.scansearch{width:100%;margin-bottom:8px}
+  .scan .reslist{margin-top:0;max-height:184px;overflow:auto}
+  .scan .scanempty{padding:14px 11px;font-size:12.5px;color:var(--text-3)}
+  details.scanfail{margin-top:9px;font-size:12px}
+  details.scanfail summary{cursor:pointer;color:var(--warn);list-style:none}
+  details.scanfail summary::-webkit-details-marker{display:none}
+  details.scanfail summary::before{content:"▸ "}
+  details.scanfail[open] summary::before{content:"▾ "}
+  details.scanfail .inner{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:7px 2px 0;color:var(--text-2)}
   .setup-foot{
     flex:0 0 auto;margin-top:auto;padding:16px 0 22px;display:flex;align-items:center;gap:14px;
     position:sticky;bottom:0;background:linear-gradient(to top,var(--surface) 70%,transparent);
@@ -399,6 +413,7 @@
     <option value="sync-progress">反映の進行中</option>
     <option value="sync-result">反映の結果（1件失敗）</option>
     <option value="settings">設定</option>
+    <option value="add-res-modal">リソース追加モーダル（設定）</option>
   </select>
   <span class="hint">FoundryCodex Bridge — 静的 UI モック（ダミーデータ）</span>
 </div>
@@ -559,16 +574,9 @@
         </div>
         <div class="srow">
           <div class="txt">
-            <div class="t">テナント</div>
-            <div class="d">Contoso Corp（アクセスできるテナントは 1 つです）</div>
+            <div class="t">アクセスできるテナント</div>
+            <div class="d" id="setTenantText">Contoso Corp, Contoso Labs, Fabrikam Ltd（要サインイン）</div>
           </div>
-        </div>
-        <div class="srow">
-          <div class="txt">
-            <div class="t">サブスクリプション</div>
-            <div class="d" id="setSubText">Prod-AI（0f3a…9c21）</div>
-          </div>
-          <button class="btn" id="btnChangeSub">変更</button>
         </div>
         <div class="tiny muted" style="margin:14px 0 6px">接続中の Azure Model Resource</div>
         <div id="settingsResList"></div>
@@ -621,24 +629,51 @@
 
   /* ============ ダミーデータ ============ */
   var resources = [
-    {id:"foundry-prod", label:"rg-ai / foundry-prod", region:"japaneast"},
-    {id:"aoai-dev",     label:"rg-dev / aoai-dev",    region:"eastus2"}
+    {id:"foundry-prod", label:"rg-ai / foundry-prod", region:"japaneast",
+     tenantName:"Contoso Corp", subName:"Prod-AI"},
+    {id:"aoai-dev",     label:"rg-dev / aoai-dev",    region:"eastus2",
+     tenantName:"Contoso Corp", subName:"Dev-Sandbox"}
   ];
 
-  /* Azure の階層: tenant → subscription → resource group → Azure Model Resource */
-  var azTenants = [{id:"contoso", name:"Contoso Corp"}];
+  /* Azure の階層: tenant → subscription → resource group → Azure Model Resource。
+     サインイン後は「すべてのテナント × サブスクリプション」を並列に走査する。 */
+  var azTenants = [
+    {id:"contoso",  name:"Contoso Corp",  ok:true},
+    {id:"labs",     name:"Contoso Labs",  ok:true},
+    {id:"fabrikam", name:"Fabrikam Ltd",  ok:false, err:"追加のサインインが必要です"}
+  ];
   var azSubs = [
-    {id:"0f3a…9c21", name:"Prod-AI", active:true},
-    {id:"7b21…4d10", name:"Sandbox-Dev", active:false}
+    {id:"0f3a…9c21", name:"Prod-AI",       tenant:"contoso"},
+    {id:"7b21…4d10", name:"Dev-Sandbox",   tenant:"contoso"},
+    {id:"3c8e…1a77", name:"Corp-Shared",   tenant:"contoso"},
+    {id:"9d41…5b02", name:"Labs-Shared",   tenant:"labs"},
+    {id:"5a17…8e63", name:"Labs-POC",      tenant:"labs"},
+    {id:"2e90…7f14", name:"Fabrikam-Main", tenant:"fabrikam"}
   ];
   var azResources = [
-    {id:"foundry-prod",   name:"foundry-prod",   rg:"rg-ai",  region:"japaneast", kind:"Foundry",
-     localAuth:true,  connected:true,  published:3},
-    {id:"aoai-dev",       name:"aoai-dev",       rg:"rg-dev", region:"eastus2",   kind:"Azure OpenAI",
-     localAuth:true,  connected:true,  published:1},
-    {id:"foundry-secure", name:"foundry-secure", rg:"rg-sec", region:"japaneast", kind:"Foundry",
-     localAuth:false, connected:false, published:0}
+    {id:"foundry-prod",    name:"foundry-prod",    tenant:"contoso", sub:"0f3a…9c21",
+     rg:"rg-ai",   region:"japaneast",     kind:"Foundry",      localAuth:true,  connected:true,  published:3},
+    {id:"aoai-dev",        name:"aoai-dev",        tenant:"contoso", sub:"7b21…4d10",
+     rg:"rg-dev",  region:"eastus2",       kind:"Azure OpenAI", localAuth:true,  connected:true,  published:1},
+    {id:"foundry-secure",  name:"foundry-secure",  tenant:"contoso", sub:"0f3a…9c21",
+     rg:"rg-sec",  region:"japaneast",     kind:"Foundry",      localAuth:false, connected:false, published:0},
+    {id:"labs-foundry-01", name:"labs-foundry-01", tenant:"labs",    sub:"9d41…5b02",
+     rg:"rg-labs", region:"swedencentral", kind:"Foundry",      localAuth:true,  connected:false, published:0},
+    {id:"aoai-poc",        name:"aoai-poc",        tenant:"labs",    sub:"5a17…8e63",
+     rg:"rg-poc",  region:"eastus",        kind:"Azure OpenAI", localAuth:true,  connected:false, published:0}
   ];
+  var defaultConnected = ["foundry-prod", "aoai-dev"];
+
+  function azTenantById(id){ return azTenants.filter(function(t){ return t.id === id; })[0]; }
+  function azSubById(id){ return azSubs.filter(function(s){ return s.id === id; })[0]; }
+  function azResById(id){ return azResources.filter(function(r){ return r.id === id; })[0]; }
+  function resTenantName(r){ return azTenantById(r.tenant).name; }
+  function resSubName(r){ return azSubById(r.sub).name; }
+  function setConnections(on){
+    azResources.forEach(function(r){
+      r.connected = on && defaultConnected.indexOf(r.id) >= 0;
+    });
+  }
 
   /* Deployment: Azure 側の実体。pub = 現在 Codex に公開済みか（Codex 層の確定状態）。
      stage = "pub" | "unpub"（Codex 層の未反映トグル）、stageDef = 既定モデル変更の未反映。
@@ -757,15 +792,20 @@
     current = screen;
     if (sel.value !== screen) sel.value = screen;
     overlay.innerHTML = "";
+    stopScan();
 
     var isSetup = screen.indexOf("setup") === 0;
-    var isSettings = screen === "settings";
+    var isSettings = screen === "settings" || screen === "add-res-modal";
     show("scr-setup", isSetup);
     show("scr-settings", isSettings);
     show("scr-home", !isSetup && !isSettings);
 
     if (isSetup) { renderSetup(screen === "setup-almost"); return; }
-    if (isSettings) { renderSettingsRes(); return; }
+    if (isSettings) {
+      renderSettingsRes();
+      if (screen === "add-res-modal") openAddResModal();
+      return;
+    }
 
     /* ホーム系 */
     var empty = screen === "home-empty";
@@ -808,6 +848,8 @@
   sel.addEventListener("change", function(){
     if (sel.value === "home-diff" || sel.value.indexOf("sync-") === 0) seedStaged();
     else resetStaged();
+    /* 走査の初期状態: 「初回セットアップ」は未選択、それ以外は既定の 2 件が接続済み */
+    setConnections(sel.value !== "setup-first");
     selectedDep = null;
     render(sel.value);
   });
@@ -857,6 +899,7 @@
       html += '<div class="group"><div class="group-head">'
             + '<span class="res">'+r.label+'</span>'
             + '<span class="region">'+r.region+'</span>'
+            + '<span class="tiny muted">'+r.tenantName+' · '+r.subName+'</span>'
             + '<span class="tiny muted">'+rows.length+' 件</span></div>';
       rows.forEach(function(d){
         var pub = effPub(d);
@@ -1100,19 +1143,17 @@
     var lead  = document.getElementById("setupLead");
     var btn   = document.getElementById("setupMainBtn");
     var note  = document.getElementById("setupNote");
-
-    renderResPick(almost);
+    btn.disabled = false;
 
     if (!almost){
       title.textContent = "はじめる準備";
       lead.textContent = "Azure のモデルを Codex から使えるようにするために、5 つの項目を確認します。自動でできることは Bridge が行います。";
-      setMark("chk-azure","need","!"); setAct("chk-azure",'<span class="badge warn"><span class="dot"></span>承認が必要</span>');
-      setMark("chk-res","wait","…");   setAct("chk-res",'<span class="tiny muted">Azure サインイン後に選べます</span>');
+      setMark("chk-azure","done","✓"); setAct("chk-azure",'<span class="tiny muted">atsushi_a_nakamura@jp.ricoh.com</span>');
       setMark("chk-node","done","✓");  setAct("chk-node",'<span class="tiny muted">v20.14.0 / npm 10.7.0</span>');
-      setMark("chk-ocx","wait","…");   setAct("chk-ocx",'<span class="tiny muted">Azure サインイン後に確認します</span>');
+      setMark("chk-ocx","wait","…");   setAct("chk-ocx",'<span class="tiny muted">リソースを選ぶと導入します</span>');
       setMark("chk-svc","wait","…");   setAct("chk-svc",'<span class="tiny muted">opencodex 導入後に登録します</span>');
-      btn.textContent = "Azure にサインイン";
-      note.textContent = "既定のブラウザーが開きます。承認が終わると自動で次に進みます。";
+      btn.textContent = "続ける";
+      note.textContent = "使うリソースを 1 件以上選ぶと、opencodex の導入に進みます。";
     } else {
       title.textContent = "あと少しです";
       lead.textContent = "サービスの登録まで終わりました。モデルを追加すると Codex から使えるようになります。";
@@ -1125,12 +1166,13 @@
       note.textContent = "すべての準備が整いました。";
     }
 
+    renderResPick(almost);
+
     btn.onclick = function(){
       if (!almost){
+        if (!connectedResources().length) return;
         btn.disabled = true;
-        btn.innerHTML = '<span class="spinner"></span> ブラウザーでの承認を待っています…';
-        setMark("chk-azure","run","●");
-        setAct("chk-azure",'<span class="badge busy"><span class="dot"></span>承認待ち</span>');
+        btn.innerHTML = '<span class="spinner"></span> opencodex を導入しています…';
         setTimeout(function(){ btn.disabled=false; render("setup-almost"); }, 1400);
       } else {
         render("home-empty");
@@ -1139,47 +1181,148 @@
     };
   }
 
-  /* ---- 初期セットアップ内の Azure リソース選択 ---- */
+  /* ---- Azure リソースのフラット走査（セットアップ／設定で共用）---- */
   function resMetaText(r){
-    return r.rg + " · " + r.region + " · " + r.kind;
+    return resTenantName(r) + " · " + resSubName(r) + " · " + r.rg + " · " + r.region + " · " + r.kind;
   }
-  function renderResPick(enabled){
+
+  var scanSeq = 0;
+  var scanTimer = null;
+  function stopScan(){
+    if (scanTimer){ clearInterval(scanTimer); scanTimer = null; }
+  }
+
+  /* host に検索ボックス付きのフラット一覧を組み立て、
+     サブスクリプションを 1 つずつ「走査完了」させながら行を増やす。
+     opt.complete = true なら走査済みの状態で一気に表示する。 */
+  function mountResScan(host, opt){
+    opt = opt || {};
+    stopScan();
+    var uid = "scan" + (++scanSeq);
+    var total = azSubs.length;
+    var doneSubs = opt.complete ? total : 0;
+    var filter = "";
+
+    host.innerHTML =
+      '<div class="scan" id="'+uid+'">'
+      + '<div class="scanstat"><span data-spin></span><span data-stat></span></div>'
+      + '<div class="progressbar"><i data-bar style="width:0%"></i></div>'
+      + '<input class="scansearch" type="text" data-filter'
+      +   ' placeholder="名前・テナント・サブスクリプションで絞り込み">'
+      + '<div class="reslist" data-list></div>'
+      + '<div data-fail></div>'
+      + '</div>';
+
+    var root  = document.getElementById(uid);
+    var eStat = root.querySelector("[data-stat]");
+    var eSpin = root.querySelector("[data-spin]");
+    var eBar  = root.querySelector("[data-bar]");
+    var eList = root.querySelector("[data-list]");
+    var eFail = root.querySelector("[data-fail]");
+    var eFilter = root.querySelector("[data-filter]");
+
+    function scannedSubs(){ return azSubs.slice(0, doneSubs); }
+    function foundResources(){
+      var out = [];
+      scannedSubs().forEach(function(s){
+        if (!azTenantById(s.tenant).ok) return;
+        azResources.forEach(function(r){ if (r.sub === s.id) out.push(r); });
+      });
+      return out;
+    }
+    function failedTenants(){
+      var seen = {};
+      scannedSubs().forEach(function(s){
+        var t = azTenantById(s.tenant);
+        if (!t.ok) seen[t.id] = t;
+      });
+      return Object.keys(seen).map(function(k){ return seen[k]; });
+    }
+    function matches(r){
+      if (!filter) return true;
+      var q = filter.toLowerCase();
+      return (r.name + " " + resTenantName(r) + " " + resSubName(r)).toLowerCase().indexOf(q) >= 0;
+    }
+
+    function paintHead(){
+      var running = doneSubs < total;
+      eSpin.innerHTML = running ? '<span class="spinner dark"></span>' : "";
+      eStat.textContent = running
+        ? azTenants.length + " テナント / " + total + " サブスクリプションを検索中 … "
+          + doneSubs + "/" + total + " 完了"
+        : total + " サブスクリプションから " + foundResources().length + " 件見つかりました";
+      eBar.style.width = Math.round((doneSubs / total) * 100) + "%";
+    }
+
+    function paintList(){
+      var rows = foundResources().filter(matches);
+      if (!rows.length){
+        eList.innerHTML = '<div class="scanempty">'
+          + (filter ? "条件に一致するリソースはありません。" : "リソースを探しています…") + '</div>';
+        return;
+      }
+      eList.innerHTML = rows.map(function(r){
+        var off = !r.localAuth;
+        var locked = !!(opt.lockConnected && r.connected);
+        var checked = opt.checkedOf ? opt.checkedOf(r) : (r.connected && !off);
+        return '<label class="resitem'+((off||locked)?" off":"")+'">'
+          + '<input type="checkbox" data-res="'+r.id+'"'+((off||locked)?" disabled":"")
+          +   (checked && !off ? " checked" : "")+'>'
+          + '<span><span class="rn">'+r.name+'</span>'
+          + '<span class="rm">'+resMetaText(r)+'</span>'
+          + (off ? '<span class="rm" style="color:var(--warn)">API key 認証が無効のため Codex から使えません</span>' : '')
+          + (locked ? '<span class="rm" style="color:var(--text-3)">すでに接続済みです</span>' : '')
+          + '</span></label>';
+      }).join("");
+    }
+
+    function paintFail(){
+      var bad = failedTenants();
+      if (!bad.length){ eFail.innerHTML = ""; return; }
+      eFail.innerHTML =
+        '<details class="scanfail"><summary>'+bad.length+' テナントを読み取れませんでした</summary>'
+        + '<div class="inner">'
+        + bad.map(function(t){
+            return '<span>'+t.name+': '+t.err+'</span>'
+                 + '<button class="btn subtle tinybtn" data-signin="'+t.id+'">このテナントにサインイン</button>';
+          }).join("")
+        + '</div></details>';
+    }
+
+    function paint(){ paintHead(); paintList(); paintFail(); }
+
+    eFilter.addEventListener("input", function(){ filter = eFilter.value; paintList(); });
+    eList.addEventListener("change", function(e){
+      var cb = e.target;
+      if (!cb || !cb.getAttribute || !cb.getAttribute("data-res")) return;
+      var r = azResById(cb.getAttribute("data-res"));
+      if (opt.onToggle) opt.onToggle(r, cb.checked);
+      else { r.connected = cb.checked; }
+      if (opt.afterToggle) opt.afterToggle();
+    });
+    eFail.addEventListener("click", function(e){
+      var b = e.target.closest ? e.target.closest("[data-signin]") : null;
+      if (b) b.textContent = "サインインを開いています…";
+    });
+
+    paint();
+    if (doneSubs < total){
+      scanTimer = setInterval(function(){
+        if (!document.getElementById(uid)){ stopScan(); return; }
+        doneSubs++;
+        paint();
+        if (opt.afterToggle) opt.afterToggle();
+        if (doneSubs >= total) stopScan();
+      }, 400);
+    }
+    return {paint: paint};
+  }
+
+  function renderResPick(almost){
     var card = document.getElementById("chk-res");
     var body = document.getElementById("resPickBody");
-    card.classList.toggle("disabled", !enabled);
-    if (!enabled){ body.innerHTML = ""; return; }
-
-    var subOpts = azSubs.map(function(s){
-      return '<option'+(s.active?" selected":"")+'>'+s.name+'（'+s.id+'）</option>';
-    }).join("");
-
-    var items = azResources.map(function(r){
-      var off = !r.localAuth;
-      return '<label class="resitem'+(off?" off":"")+'">'
-           + '<input type="checkbox" data-res="'+r.id+'"'+(off?" disabled":"")
-           +   (r.connected && !off?" checked":"")+'>'
-           + '<span><span class="rn">'+r.name+'</span>'
-           + '<span class="rm">'+resMetaText(r)+'</span>'
-           + (off?'<span class="rm" style="color:var(--warn)">API key 認証が無効のため Codex から使えません</span>':'')
-           + '</span></label>';
-    }).join("");
-
-    body.innerHTML =
-      '<div class="subline"><span class="k">テナント</span>'
-      + '<span style="font-size:13px">'+azTenants[0].name+'</span>'
-      + '<span class="tiny muted">（アクセスできるテナントは 1 つです）</span></div>'
-      + '<div class="subline"><span class="k">サブスクリプション</span>'
-      +   '<select id="setupSubSel">'+subOpts+'</select></div>'
-      + '<div class="tiny muted" style="margin-top:12px">このサブスクリプションで見つかった Azure Model Resource</div>'
-      + '<div class="reslist">'+items+'</div>';
-
-    body.querySelectorAll("[data-res]").forEach(function(cb){
-      cb.addEventListener("change", function(){
-        var r = azResources.filter(function(x){ return x.id === cb.getAttribute("data-res"); })[0];
-        r.connected = cb.checked;
-        updateResPickCount();
-      });
-    });
+    card.classList.remove("disabled");
+    mountResScan(body, {complete: !!almost, afterToggle: updateResPickCount});
     updateResPickCount();
   }
   function connectedResources(){
@@ -1191,6 +1334,8 @@
       ? '<span class="tiny muted">選択済み '+n+' 件</span>'
       : '<span class="badge warn"><span class="dot"></span>1 件以上選んでください</span>');
     setMark("chk-res", n ? "done" : "need", n ? "✓" : "!");
+    var b = document.getElementById("setupMainBtn");
+    if (b && current === "setup-first") b.disabled = !n;
   }
 
   /* ============ モーダル基盤 ============ */
@@ -1216,7 +1361,8 @@
 
   function resOptions(){
     return connectedResources().map(function(r){
-      return '<option value="'+r.id+'">'+r.rg+' / '+r.name+'（'+r.region+'）</option>';
+      return '<option value="'+r.id+'">'+r.name+'（'+resTenantName(r)+' · '+resSubName(r)
+           + ' · '+r.region+'）</option>';
     }).join("") + '<option value="__connect">他のリソースを接続…</option>';
   }
 
@@ -1320,7 +1466,7 @@
       resSel.addEventListener("change", function(){
         if (resSel.value === "__connect"){
           overlay.innerHTML = "";
-          render("settings");
+          render("add-res-modal");
         }
       });
     }
@@ -1596,7 +1742,7 @@
     host.innerHTML = list.length ? list.map(function(r){
       return '<div class="srow">'
         + '<div class="txt"><div class="t">'+r.name+'</div>'
-        + '<div class="d">'+resMetaText(r)+' ／ 公開中のモデル '+r.published+' 件</div></div>'
+        + '<div class="d">'+resMetaText(r)+' · 公開中 '+r.published+' モデル</div></div>'
         + '<button class="btn icon" data-disconnect="'+r.id+'" title="その他の操作">…</button>'
         + '</div>';
     }).join("") : '<div class="srow"><div class="txt"><div class="d">接続中のリソースはありません。</div></div></div>';
@@ -1605,6 +1751,42 @@
       b.addEventListener("click", function(){
         openDisconnect(b.getAttribute("data-disconnect"));
       });
+    });
+  }
+
+  /* 設定：リソースを追加（セットアップと同じフラット一覧） */
+  function openAddResModal(){
+    var picked = {};
+    var m = mount(
+      '<div class="modal wide">'
+      + '<div class="modal-head"><h2>リソースを追加</h2>'
+      +   '<div class="s">アクセスできるすべてのテナント・サブスクリプションから'
+      +     ' Foundry / Azure OpenAI リソースを探します。</div></div>'
+      + '<div class="modal-body"><div id="addResScan"></div></div>'
+      + '<div class="modal-foot"><span class="spacer"></span>'
+      +   '<button class="btn" data-close>キャンセル</button>'
+      +   '<button class="btn primary" id="addResOk">接続</button>'
+      + '</div></div>'
+    );
+    mountResScan(document.getElementById("addResScan"), {
+      lockConnected: true,
+      checkedOf: function(r){ return r.connected || !!picked[r.id]; },
+      onToggle: function(r, on){ picked[r.id] = on; }
+    });
+
+    function closeAddRes(){
+      stopScan();
+      overlay.innerHTML = "";
+      current = "settings";
+      if (sel.value !== "settings") sel.value = "settings";
+      renderSettingsRes();
+    }
+    m.querySelector("[data-close]").addEventListener("click", closeAddRes);
+    m.querySelector("#addResOk").addEventListener("click", function(){
+      Object.keys(picked).forEach(function(id){
+        if (picked[id]) azResById(id).connected = true;
+      });
+      closeAddRes();
     });
   }
 
@@ -1634,8 +1816,7 @@
   document.getElementById("btnDiscardDiff").addEventListener("click", function(){
     resetStaged(); selectedDep = null; render("home");
   });
-  document.getElementById("btnAddResource").addEventListener("click", function(){ render("setup-almost"); });
-  document.getElementById("btnChangeSub").addEventListener("click", function(){ render("setup-almost"); });
+  document.getElementById("btnAddResource").addEventListener("click", function(){ render("add-res-modal"); });
 
   render("home");
 })();
