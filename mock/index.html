@@ -1179,13 +1179,13 @@
       note.textContent = "使うリソースを 1 件以上選ぶと、opencodex の導入に進みます。";
     } else {
       title.textContent = "あと少しです";
-      lead.textContent = "サービスの登録まで終わりました。モデルを追加すると Codex から使えるようになります。";
+      lead.textContent = "サービスの登録まで終わりました。選んだリソースの Model Deployment を確認して、Codex で使うものを選びます。";
       setMark("chk-azure","done","✓"); setAct("chk-azure",'<span class="tiny muted">atsushi_a_nakamura@jp.ricoh.com</span>');
       setMark("chk-res","done","✓");   setAct("chk-res",'<span class="tiny muted" id="resPickCount">選択済み 2 件</span>');
       setMark("chk-node","done","✓");  setAct("chk-node",'<span class="tiny muted">v20.14.0 / npm 10.7.0</span>');
       setMark("chk-ocx","done","✓");   setAct("chk-ocx",'<span class="tiny muted">v0.9.3 を導入しました</span>');
       setMark("chk-svc","done","✓");   setAct("chk-svc",'<span class="badge ok"><span class="dot"></span>実行中 · ポート 8123</span>');
-      btn.textContent = "モデルを追加して始める";
+      btn.textContent = "はじめる";
       note.textContent = "すべての準備が整いました。";
     }
 
@@ -1198,8 +1198,7 @@
         btn.innerHTML = '<span class="spinner"></span> opencodex を導入しています…';
         setTimeout(function(){ btn.disabled=false; render("setup-almost"); }, 1400);
       } else {
-        render("home-empty");
-        setTimeout(openAddModal, 120);
+        render("home");
       }
     };
   }
